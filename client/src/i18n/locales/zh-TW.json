@@ -142,6 +142,13 @@
     "statsFmv": "FMV",
     "statsCost": "成本",
     "statsPnl": "損益",
+    "statsUnrealized": "未實現",
+    "statsRevenue": "收益",
+    "openSalesHistory": "開啟售出紀錄",
+    "openSalesHistoryShort": "點開歷史",
+    "loadOkSales": "已載入 {{total}} 張 · 售出 {{sales}} 筆",
+    "scanOkSales": "掃描完成 · 持有 {{total}} · 售出 {{sales}}",
+    "scanOkPrefillSales": "掃描完成 · 抽包成本 {{prefill}}/{{total}} · 售出 {{sales}}",
     "pack": "抽包",
     "filters": {
       "all": "全部",
@@ -194,5 +201,25 @@
     "gated": "已閘道 — 不在掃描允許清單。",
     "noNeighbors": "找不到相鄰卡。",
     "costSource": "成本來源"
+  },
+  "sales": {
+    "label": "已實現損益",
+    "title": "收益 · 售出紀錄",
+    "empty": "尚無鏈上售出紀錄 — 請重掃鏈上，或此錢包尚無回購／市場成交。",
+    "summaryCount": "筆數",
+    "summaryCost": "總花費",
+    "summarySold": "總售出",
+    "summaryPnl": "總收益",
+    "colCard": "卡片",
+    "colType": "類型",
+    "colDate": "出售日期",
+    "colCost": "購入價",
+    "colSold": "出售價",
+    "colPnl": "收益",
+    "type": {
+      "BUYBACK": "回購",
+      "MARKETPLACE": "市場交易",
+      "TRANSFER_OUT": "轉出"
+    }
   }
 }

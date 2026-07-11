@@ -142,6 +142,13 @@
     "statsFmv": "FMV",
     "statsCost": "Cost",
     "statsPnl": "PnL",
+    "statsUnrealized": "Unrealized",
+    "statsRevenue": "Revenue",
+    "openSalesHistory": "Open sold history",
+    "openSalesHistoryShort": "tap for history",
+    "loadOkSales": "Loaded {{total}} cards · {{sales}} sales",
+    "scanOkSales": "Scan OK · {{total}} held · {{sales}} sales",
+    "scanOkPrefillSales": "Scan OK · {{prefill}}/{{total}} pack costs · {{sales}} sales",
     "pack": "pack",
     "filters": {
       "all": "All",
@@ -194,5 +201,25 @@
     "gated": "Gated — not in scan allowlist.",
     "noNeighbors": "No found neighbors.",
     "costSource": "cost source"
+  },
+  "sales": {
+    "label": "Realized P&L",
+    "title": "Revenue · sold history",
+    "empty": "No on-chain sales yet — rescan chain after sells/buybacks, or none found.",
+    "summaryCount": "Sales",
+    "summaryCost": "Total cost",
+    "summarySold": "Total sold",
+    "summaryPnl": "Total revenue",
+    "colCard": "Card",
+    "colType": "Type",
+    "colDate": "Sold",
+    "colCost": "Cost",
+    "colSold": "Sale price",
+    "colPnl": "P&L",
+    "type": {
+      "BUYBACK": "Buyback",
+      "MARKETPLACE": "Marketplace",
+      "TRANSFER_OUT": "Transfer out"
+    }
   }
 }

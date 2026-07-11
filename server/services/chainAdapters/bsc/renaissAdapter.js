@@ -31,8 +31,15 @@ export const PACK_SALE_CONTRACTS = new Set([
   '0xb2891022648c5fad3721c42c05d8d283d4d53080', // $88 packs (RenaCrypt)
   '0xfda4a907d23d9f24271bc47483c5b983831e325e', // $150/card packs (5-card bundle)
 ]);
+// Renaiss system buyback (Dokipoki txClassifier.BUYBACK_CONTRACT)
+export const BUYBACK_CONTRACT = '0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910';
+export const REDEEM_SINKS = new Set([
+  '0x72a004654cef4694a6377f5b019d0489ba8a6c9e',
+]);
 // ERC-721 tokenURI(uint256) selector
 const TOKEN_URI_SELECTOR = '0xc87b56dd';
+
+export const MAX_SALES = 200;
 
 // ─── Endpoint plumbing ──────────────────────────────────────────────────────
 
@@ -310,7 +317,7 @@ async function paginatedTransfers(directionParam, fromBlock = 0) {
         ...directionParam,
         contractAddresses: [CONTRACT],
         category: ['erc721'],
-        withMetadata: false,
+        withMetadata: true, // need blockTimestamp for soldAt
         maxCount: '0x3e8',
         ...(pageKey ? { pageKey } : {}),
       },
@@ -561,6 +568,230 @@ export async function enrichHoldingsWithPackCost(walletAddress, holdingsMap) {
   }
 
   return out;
+}
+
+// ─── Sale history (simplified ledger from transfer walk) ─────────────────────
+
+async function paginatedUsdtIn(walletAddress) {
+  const out = [];
+  let pageKey;
+  let pages = 0;
+  while (pages < PAGINATION_MAX_PAGES) {
+    const result = await rpc('alchemy_getAssetTransfers', [
+      {
+        fromBlock: '0x0',
+        toBlock: 'latest',
+        toAddress: walletAddress,
+        contractAddresses: [USDT_CONTRACT],
+        category: ['erc20'],
+        withMetadata: false,
+        maxCount: '0x3e8',
+        ...(pageKey ? { pageKey } : {}),
+      },
+    ]);
+    pages += 1;
+    out.push(...(result.transfers ?? []));
+    if (!result.pageKey) break;
+    pageKey = result.pageKey;
+  }
+  return out;
+}
+
+function blockTimestampMs(blockNum, metadata) {
+  // Alchemy transfer may include metadata.blockTimestamp
+  const raw = metadata?.blockTimestamp || metadata?.timestamp;
+  if (raw) {
+    const t = Date.parse(raw);
+    if (Number.isFinite(t)) return t;
+  }
+  return null;
+}
+
+function saleIdFor({ tokenId, saleTxHash, soldAtMs }) {
+  const basis = `${tokenId}|${saleTxHash || ''}|${soldAtMs || 0}`;
+  // short stable id without crypto dep
+  let h = 0;
+  for (let i = 0; i < basis.length; i++) h = (Math.imul(31, h) + basis.charCodeAt(i)) | 0;
+  return `sale_${Math.abs(h).toString(36)}_${String(tokenId).slice(-8)}`;
+}
+
+/**
+ * Build sold-history rows from NFT transfers out of wallet + USDT inflows.
+ * Cost basis: last pack payment correlated when the NFT entered the wallet.
+ *
+ * @returns {Promise<{ sales: object[], summary: object, truncated: boolean }>}
+ */
+export async function fetchSaleHistory(walletAddress) {
+  if (!isConfigured()) {
+    return {
+      sales: [],
+      summary: { count: 0, totalSoldUsd: 0, totalCostUsd: 0, totalRealizedPnlUsd: 0 },
+      truncated: false,
+    };
+  }
+
+  const wallet = walletAddress.toLowerCase();
+  const [nftTransfers, purchases, usdtIn] = await Promise.all([
+    loadAllTransfers(walletAddress),
+    loadPackPurchases(walletAddress).catch(() => []),
+    paginatedUsdtIn(walletAddress).catch(() => []),
+  ]);
+
+  /** @type {Map<string, number>} txHash -> total USDT USD into wallet */
+  const usdtInByTx = new Map();
+  for (const t of usdtIn) {
+    const hash = (t.hash ?? '').toLowerCase();
+    if (!hash) continue;
+    const amount = Number(t.value);
+    if (!Number.isFinite(amount) || amount <= 0) continue;
+    usdtInByTx.set(hash, (usdtInByTx.get(hash) || 0) + amount);
+  }
+
+  // Count NFT outs per tx (for splitting USDT when multi-card sold same tx)
+  const outsByTx = new Map();
+  for (const t of nftTransfers) {
+    const from = (t.from ?? '').toLowerCase();
+    if (from !== wallet) continue;
+    const hash = (t.hash ?? '').toLowerCase();
+    if (!hash) continue;
+    outsByTx.set(hash, (outsByTx.get(hash) || 0) + 1);
+  }
+
+  const sorted = [...nftTransfers].sort(
+    (a, b) => normalizeBlock(a.blockNum) - normalizeBlock(b.blockNum),
+  );
+
+  /** @type {Map<string, { costUsd: number|null, costSource: string|null }>} */
+  const costBasis = new Map();
+  const sales = [];
+
+  for (const t of sorted) {
+    const tokenId = normalizeTokenId(t.tokenId);
+    if (!tokenId) continue;
+    const to = (t.to ?? '').toLowerCase();
+    const from = (t.from ?? '').toLowerCase();
+    const hash = (t.hash ?? '').toLowerCase() || null;
+    const block = normalizeBlock(t.blockNum);
+
+    if (to === wallet) {
+      // Acquired — estimate cost from pack payment
+      let acquireType = 'UNKNOWN';
+      if (from && PACK_SALE_CONTRACTS.has(from)) acquireType = 'PACK_PULL';
+      else if (from === ZERO_ADDRESS) acquireType = 'MINT';
+      else if (from) acquireType = 'TRANSFER';
+
+      let costUsd = null;
+      let costSource = null;
+      if (acquireType === 'PACK_PULL' || acquireType === 'MINT') {
+        const payment = matchPackPayment(purchases, block, hash);
+        if (payment && Number.isFinite(payment.amountUSD) && payment.amountUSD > 0) {
+          // Best-effort single-card; group split only among concurrent same-tx holds is hard offline
+          costUsd = payment.amountUSD;
+          costSource = 'pack_payment';
+          // If multiple NFTs in same pack payment tx are later held, scan path may refine;
+          // for historical sales we prefer undivided then user can edit — better split:
+          const sameTxNfts = sorted.filter((x) => {
+            const h = (x.hash ?? '').toLowerCase();
+            const tt = (x.to ?? '').toLowerCase();
+            return h && payment.txHash && h === String(payment.txHash).toLowerCase() && tt === wallet;
+          }).length;
+          if (sameTxNfts > 1) {
+            costUsd = payment.amountUSD / sameTxNfts;
+            costSource = 'pack_payment_split';
+          }
+        }
+      }
+      costBasis.set(tokenId, { costUsd, costSource });
+      continue;
+    }
+
+    if (from !== wallet) continue;
+
+    // Left wallet — redeem sinks are not sales
+    if (to && REDEEM_SINKS.has(to)) {
+      costBasis.delete(tokenId);
+      continue;
+    }
+
+    const usdtTotal = hash ? usdtInByTx.get(hash) : null;
+    const nOut = hash ? (outsByTx.get(hash) || 1) : 1;
+    const soldPriceUsd = Number.isFinite(usdtTotal) && usdtTotal > 0
+      ? usdtTotal / nOut
+      : null;
+
+    let saleType = 'TRANSFER_OUT';
+    if (to && to === BUYBACK_CONTRACT) saleType = 'BUYBACK';
+    else if (Number.isFinite(soldPriceUsd) && soldPriceUsd > 0) saleType = 'MARKETPLACE';
+
+    // Skip pure transfers without proceeds from realized totals (still list)
+    const basis = costBasis.get(tokenId) || { costUsd: null, costSource: null };
+    const costBasisUsd = Number.isFinite(basis.costUsd) ? basis.costUsd : null;
+    const realizedPnlUsd = Number.isFinite(soldPriceUsd) && Number.isFinite(costBasisUsd)
+      ? soldPriceUsd - costBasisUsd
+      : null;
+
+    const soldAtMs = blockTimestampMs(block, t.metadata) ?? null;
+    const soldAt = soldAtMs
+      ? new Date(soldAtMs).toISOString()
+      : (Number.isFinite(block) ? null : null);
+
+    sales.push({
+      id: saleIdFor({ tokenId, saleTxHash: hash, soldAtMs: soldAtMs || block }),
+      tokenId: String(tokenId),
+      saleType,
+      soldAt,
+      soldBlock: block,
+      soldPriceUsd: Number.isFinite(soldPriceUsd) ? soldPriceUsd : null,
+      costBasisUsd,
+      costSource: basis.costSource,
+      realizedPnlUsd: Number.isFinite(realizedPnlUsd) ? realizedPnlUsd : null,
+      saleTxHash: hash,
+      counterparty: to || null,
+      // filled later by scan enrichment
+      cert: null,
+      name: null,
+      imageUrl: null,
+      grade: null,
+      setName: null,
+    });
+
+    costBasis.delete(tokenId);
+  }
+
+  // Newest first
+  sales.sort((a, b) => {
+    const ab = Number(a.soldBlock) || 0;
+    const bb = Number(b.soldBlock) || 0;
+    return bb - ab;
+  });
+
+  const truncated = sales.length > MAX_SALES;
+  const sliced = truncated ? sales.slice(0, MAX_SALES) : sales;
+
+  // Summary: only rows with proceeds (BUYBACK / MARKETPLACE)
+  let totalSoldUsd = 0;
+  let totalCostUsd = 0;
+  let totalRealizedPnlUsd = 0;
+  let countWithProceeds = 0;
+  for (const s of sliced) {
+    if (s.saleType === 'TRANSFER_OUT') continue;
+    countWithProceeds += 1;
+    if (Number.isFinite(s.soldPriceUsd)) totalSoldUsd += s.soldPriceUsd;
+    if (Number.isFinite(s.costBasisUsd)) totalCostUsd += s.costBasisUsd;
+    if (Number.isFinite(s.realizedPnlUsd)) totalRealizedPnlUsd += s.realizedPnlUsd;
+  }
+
+  return {
+    sales: sliced,
+    summary: {
+      count: countWithProceeds,
+      totalCount: sliced.length,
+      totalSoldUsd,
+      totalCostUsd,
+      totalRealizedPnlUsd,
+    },
+    truncated,
+  };
 }
 
 // ─── fetchNFTAttributes ──────────────────────────────────────────────────────

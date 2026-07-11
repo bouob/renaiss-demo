@@ -1,6 +1,5 @@
 /**
- * POST /scan — wallet scan → holdings + metadata + FMV + pack cost prefill.
- * Rejects blocked/invalid wallets via walletGuard.
+ * POST /scan — wallet scan → holdings + sales history + FMV + pack cost prefill.
  */
 
 import { Router } from 'express';
@@ -10,6 +9,7 @@ import {
   fetchHoldings,
   fetchNFTAttributes,
   enrichHoldingsWithPackCost,
+  fetchSaleHistory,
   isConfigured as isChainConfigured,
 } from '../services/chainAdapters/bsc/renaissAdapter.js';
 import { getGradedFmv, isConfigured as isIndexConfigured } from '../services/renaissOsIndex.js';
@@ -23,32 +23,56 @@ const scanLimiter = rateLimit({
   max: 5,
   standardHeaders: true,
   legacyHeaders: false,
-  message: { error: 'rate_limited', holdings: [] },
+  message: { error: 'rate_limited', holdings: [], sales: [] },
 });
 
 const ATTR_CONCURRENCY = 4;
 const MAX_HOLDINGS = 80;
+const MAX_SALE_ENRICH = 40;
 
 router.post('/scan', scanLimiter, async (req, res) => {
   try {
     const address = String(req.body?.address ?? req.body?.wallet ?? '').trim();
 
     if (!isValidAddressShape(address)) {
-      return res.status(400).json({ error: 'invalid_wallet', code: 'invalid_shape', holdings: [] });
+      return res.status(400).json({
+        error: 'invalid_wallet',
+        code: 'invalid_shape',
+        holdings: [],
+        sales: [],
+      });
     }
     if (!isAllowedWallet(address)) {
-      return res.status(400).json({ error: 'invalid_wallet', code: 'blocked_address', holdings: [] });
+      return res.status(400).json({
+        error: 'invalid_wallet',
+        code: 'blocked_address',
+        holdings: [],
+        sales: [],
+      });
     }
 
     if (!isChainConfigured()) {
       return res.json({
         address: address.toLowerCase(),
         holdings: [],
+        sales: [],
+        salesSummary: { count: 0, totalSoldUsd: 0, totalCostUsd: 0, totalRealizedPnlUsd: 0 },
         warning: 'chain_unconfigured',
       });
     }
 
-    const holdingsMap = await fetchHoldings(address);
+    const [holdingsMap, saleHist] = await Promise.all([
+      fetchHoldings(address),
+      fetchSaleHistory(address).catch((err) => {
+        console.warn(`[scan] fetchSaleHistory: ${err?.message ?? err}`);
+        return {
+          sales: [],
+          summary: { count: 0, totalSoldUsd: 0, totalCostUsd: 0, totalRealizedPnlUsd: 0 },
+          truncated: false,
+        };
+      }),
+    ]);
+
     const heldEntries = [...holdingsMap.entries()]
       .filter(([, row]) => row?.held)
       .slice(0, MAX_HOLDINGS);
@@ -88,6 +112,29 @@ router.post('/scan', scanLimiter, async (req, res) => {
     const holdings = items.filter(Boolean);
     rememberHeldCerts(holdings.map((h) => h.serial).filter(Boolean));
 
+    // Enrich recent sales with NFT metadata (name/image/cert)
+    let sales = Array.isArray(saleHist.sales) ? [...saleHist.sales] : [];
+    const toEnrich = sales.slice(0, MAX_SALE_ENRICH);
+    const enriched = await runConcurrent(toEnrich, ATTR_CONCURRENCY, async (sale) => {
+      try {
+        const attrs = await fetchNFTAttributes(sale.tokenId);
+        const serial = attrs?.serial ?? attrs?.cert ?? null;
+        return {
+          ...sale,
+          cert: serial ? String(serial) : sale.cert,
+          name: attrs?.name ?? sale.name,
+          setName: attrs?.setName ?? attrs?.set ?? sale.setName,
+          grade: attrs?.grade ?? attrs?.gradeLabel ?? sale.grade,
+          imageUrl: attrs?.imageUrl ?? sale.imageUrl,
+        };
+      } catch {
+        return sale;
+      }
+    });
+    for (let i = 0; i < enriched.length; i += 1) {
+      sales[i] = enriched[i];
+    }
+
     const packPrefill = holdings.filter((h) => Number.isFinite(h.onChainCostUsd)).length;
 
     return res.json({
@@ -95,10 +142,19 @@ router.post('/scan', scanLimiter, async (req, res) => {
       holdings,
       count: holdings.length,
       packCostPrefillCount: packPrefill,
+      sales,
+      salesSummary: saleHist.summary,
+      salesTruncated: Boolean(saleHist.truncated),
     });
   } catch (err) {
     console.warn(`[scan] unexpected error: ${err?.message ?? err}`);
-    return res.json({ address: null, holdings: [], error: 'scan_failed' });
+    return res.json({
+      address: null,
+      holdings: [],
+      sales: [],
+      salesSummary: { count: 0, totalSoldUsd: 0, totalCostUsd: 0, totalRealizedPnlUsd: 0 },
+      error: 'scan_failed',
+    });
   }
 });
 

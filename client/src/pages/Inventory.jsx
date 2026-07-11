@@ -6,11 +6,14 @@ import {
   bulkMeta,
   scanWallet,
   fetchCard,
+  fetchSales,
+  bulkSales,
 } from '../lib/inventoryApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import { classifyMerchantDecisionDetail } from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
+import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
 const PAGE_SIZE = 12;
 const LAST_WALLET_KEY = 'merchant_last_wallet';
@@ -53,6 +56,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
+  const [sales, setSales] = useState([]);
+  const [salesSummary, setSalesSummary] = useState(null);
+  const [showSales, setShowSales] = useState(false);
 
   function rememberWallet(addr) {
     const w = normalizeWallet(addr);
@@ -85,6 +91,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setCsvNote(null);
       setPage(1);
       setError(null);
+      setSales([]);
+      setSalesSummary(null);
+      setShowSales(false);
     }
   }, [user]);
 
@@ -120,12 +129,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  /** Load saved meta only (no chain scan). Signed-in only. */
+  /** Load saved meta + sales (no chain scan). Signed-in only. */
   async function loadWalletInventory(walletAddr, { quiet } = {}) {
     const addr = normalizeWallet(walletAddr);
     if (!addr) {
       setItems([]);
       setBoundWallet('');
+      setSales([]);
+      setSalesSummary(null);
       return;
     }
     if (!user) {
@@ -140,18 +151,30 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         setItems([]);
         return;
       }
-      const metaRes = await fetchMeta({ authToken: token, wallet: addr });
+      const [metaRes, salesRes] = await Promise.all([
+        fetchMeta({ authToken: token, wallet: addr }),
+        fetchSales({ authToken: token, wallet: addr }).catch(() => ({ sales: [], summary: null })),
+      ]);
       const list = Array.isArray(metaRes?.items) ? metaRes.items : [];
       setItems(list);
+      setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
+      setSalesSummary(salesRes?.summary ?? null);
       setBoundWallet(addr);
       setWallet(addr);
       rememberWallet(addr);
       if (!quiet) {
-        setCsvNote(t('inventory.loadOk', { total: list.length }));
+        const saleN = salesRes?.summary?.count ?? (salesRes?.sales?.length || 0);
+        setCsvNote(t('inventory.loadOkSales', {
+          total: list.length,
+          sales: saleN,
+          defaultValue: t('inventory.loadOk', { total: list.length }),
+        }));
       }
     } catch (err) {
       setError(err?.message ?? t('inventory.loadFailed'));
       setItems([]);
+      setSales([]);
+      setSalesSummary(null);
     } finally {
       setLoading(false);
     }
@@ -256,6 +279,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     return { fmv, cost, pnl, withCost, n: enriched.length };
   }, [enriched]);
 
+  const realizedPnl = Number.isFinite(salesSummary?.totalRealizedPnlUsd)
+    ? salesSummary.totalRealizedPnlUsd
+    : null;
+  const hasSalesData = sales.length > 0 || Number.isFinite(realizedPnl);
+
   const selected = enriched.find((i) => (i.cert || i.id) === selectedCert) || null;
 
   async function withAuth(fn) {
@@ -322,10 +350,23 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setPage(1);
       setBoundWallet(addr);
       setItems(mapped);
+      const saleRows = Array.isArray(res?.sales) ? res.sales : [];
+      setSales(saleRows);
+      setSalesSummary(res?.salesSummary ?? null);
+      const saleCount = res?.salesSummary?.count ?? saleRows.filter((s) => s.saleType !== 'TRANSFER_OUT').length;
       setCsvNote(
         res?.packCostPrefillCount
-          ? t('inventory.scanOkPrefill', { prefill: res.packCostPrefillCount, total: mapped.length })
-          : t('inventory.scanOk', { total: mapped.length }),
+          ? t('inventory.scanOkPrefillSales', {
+            prefill: res.packCostPrefillCount,
+            total: mapped.length,
+            sales: saleCount,
+            defaultValue: t('inventory.scanOkPrefill', { prefill: res.packCostPrefillCount, total: mapped.length }),
+          })
+          : t('inventory.scanOkSales', {
+            total: mapped.length,
+            sales: saleCount,
+            defaultValue: t('inventory.scanOk', { total: mapped.length }),
+          }),
       );
 
       rememberWallet(addr);
@@ -334,6 +375,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       if (user) {
         await withAuth(async (token) => {
           await persistBulk(mapped, token, addr);
+          if (saleRows.length) {
+            await bulkSales(saleRows, addr, { authToken: token });
+          }
         });
       } else {
         setCsvNote((prev) => `${prev || ''} ${t('inventory.scanGuestNote')}`.trim());
@@ -502,7 +546,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             <p className="small" style={{ marginTop: '0.45rem' }}>{t('inventory.needWalletHint')}</p>
           )}
         </div>
-        {enriched.length > 0 && (
+        {(enriched.length > 0 || hasSalesData) && (
           <div className="hero-stats" aria-label="Portfolio snapshot">
             <div className="hero-stat">
               <span className="label">{t('inventory.statsCards')}</span>
@@ -517,11 +561,26 @@ export default function Inventory({ user, getToken, firebaseOk }) {
               <strong>{formatUsd(portfolioStats.withCost ? portfolioStats.cost : null)}</strong>
             </div>
             <div className="hero-stat">
-              <span className="label">{t('inventory.statsPnl')}</span>
+              <span className="label">{t('inventory.statsUnrealized')}</span>
               <strong className={Number.isFinite(portfolioStats.pnl) ? (portfolioStats.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
                 {formatUsd(portfolioStats.pnl)}
               </strong>
             </div>
+            <button
+              type="button"
+              className="hero-stat hero-stat-btn"
+              onClick={() => setShowSales(true)}
+              title={t('inventory.openSalesHistory')}
+              aria-label={t('inventory.openSalesHistory')}
+            >
+              <span className="label">{t('inventory.statsRevenue')}</span>
+              <strong className={Number.isFinite(realizedPnl) ? (realizedPnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
+                {formatUsd(realizedPnl)}
+              </strong>
+              <span className="small" style={{ marginTop: '0.15rem' }}>
+                {t('inventory.openSalesHistoryShort')}
+              </span>
+            </button>
           </div>
         )}
       </header>
@@ -715,6 +774,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           onSaveCost={saveCost}
           onSaveDetails={saveDetails}
           onUpdateStatus={updateStatus}
+        />
+      )}
+
+      {showSales && (
+        <SoldHistoryModal
+          sales={sales}
+          summary={salesSummary}
+          onClose={() => setShowSales(false)}
         />
       )}
     </main>

@@ -1545,6 +1545,89 @@ code {
   box-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
 }
 
+/* Sold history table */
+.sales-table-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+}
+.sales-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8125rem;
+}
+.sales-table th {
+  text-align: left;
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid var(--glass-border);
+  white-space: nowrap;
+}
+.sales-table td {
+  padding: 0.55rem 0.65rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  vertical-align: middle;
+}
+.sales-table tr:last-child td { border-bottom: none; }
+.sales-card-cell {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  min-width: 10rem;
+}
+.sales-thumb {
+  width: 36px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 2px;
+  border: 1px solid rgba(0, 240, 255, 0.2);
+  flex-shrink: 0;
+  background: #000;
+}
+.sales-thumb-fallback { opacity: 0.4; }
+.sales-name {
+  display: block;
+  font-size: 0.8125rem;
+  line-height: 1.25;
+  max-width: 14rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sales-type.buyback {
+  color: var(--neon-cyan);
+  border-color: rgba(0, 240, 255, 0.35);
+}
+.sales-type.marketplace {
+  color: var(--hold);
+  border-color: rgba(255, 176, 32, 0.35);
+}
+.sales-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(0, 240, 255, 0.12);
+}
+.hero-stat-btn {
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  appearance: none;
+}
+.hero-stat-btn:hover {
+  border-color: var(--glass-border-hover);
+  box-shadow: var(--shadow-glow);
+}
+.hero-stat-btn:disabled {
+  cursor: default;
+  opacity: 0.85;
+}
+
 /* Reduced motion */
 @media (prefers-reduced-motion: reduce) {
   body::after { animation: none; }

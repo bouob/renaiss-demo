@@ -43,3 +43,12 @@ export function analyzeMerchantInsight(body, { authToken } = {}) {
 export function fetchMerchantInsightUsage({ authToken } = {}) {
   return getJson('/insight/merchant-usage', { authToken });
 }
+
+export function fetchSales({ authToken, wallet } = {}) {
+  const q = wallet ? `?wallet=${encodeURIComponent(wallet)}` : '';
+  return getJson(`/sales${q}`, { authToken });
+}
+
+export function bulkSales(sales, wallet, { authToken } = {}) {
+  return postJson('/sales/bulk', { sales, wallet }, { authToken, timeoutMs: 60_000 });
+}

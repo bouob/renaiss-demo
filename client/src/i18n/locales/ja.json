@@ -142,6 +142,13 @@
     "statsFmv": "FMV",
     "statsCost": "コスト",
     "statsPnl": "損益",
+    "statsUnrealized": "未実現",
+    "statsRevenue": "収益",
+    "openSalesHistory": "売却履歴を開く",
+    "openSalesHistoryShort": "タップで履歴",
+    "loadOkSales": "{{total}} 枚 · 売却 {{sales}} 件を読込",
+    "scanOkSales": "スキャン完了 · 保有 {{total}} · 売却 {{sales}}",
+    "scanOkPrefillSales": "スキャン完了 · パック {{prefill}}/{{total}} · 売却 {{sales}}",
     "pack": "パック",
     "filters": {
       "all": "すべて",
@@ -194,5 +201,25 @@
     "gated": "ゲート済み — スキャン許可リスト外。",
     "noNeighbors": "隣接カードなし。",
     "costSource": "コスト源"
+  },
+  "sales": {
+    "label": "実現損益",
+    "title": "収益 · 売却履歴",
+    "empty": "オンチェーン売却なし — 再スキャンするか、履歴がありません。",
+    "summaryCount": "件数",
+    "summaryCost": "総コスト",
+    "summarySold": "総売却額",
+    "summaryPnl": "総収益",
+    "colCard": "カード",
+    "colType": "種別",
+    "colDate": "売却日",
+    "colCost": "取得価",
+    "colSold": "売却価",
+    "colPnl": "損益",
+    "type": {
+      "BUYBACK": "買戻し",
+      "MARKETPLACE": "マーケット",
+      "TRANSFER_OUT": "転送出"
+    }
   }
 }
