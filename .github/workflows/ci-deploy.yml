@@ -288,18 +288,26 @@ jobs:
             exit 0
           fi
           echo "firebase CLI failed ($code); trying gcloud gen2 http function"
-          # Path B: gcloud avoids firebaseextensions.googleapis.com list call
-          # Pack server as source; entry-point must match export name
+          # Path B: gcloud avoids firebaseextensions.googleapis.com list call.
+          # Stage ONLY server/ into a clean dir — monorepo root package.json has
+          # "build": vite client, which Cloud Build would run and fail (vite missing).
+          STAGE="${RUNNER_TEMP}/merchant-fn-src"
+          rm -rf "$STAGE"
+          mkdir -p "$STAGE"
+          # package.json name must stay renaiss-merchant-server (no monorepo root scripts)
+          cp -a server/. "$STAGE/"
+          # Skip any npm lifecycle that could walk up; pure Node ESM runtime
           gcloud functions deploy merchantApi \
             --gen2 \
             --runtime=nodejs20 \
             --region=asia-east1 \
-            --source=server \
+            --source="$STAGE" \
             --entry-point=merchantApi \
             --trigger-http \
             --allow-unauthenticated \
             --memory=512MiB \
             --timeout=60s \
+            --set-build-env-vars="GOOGLE_NODE_RUN_SCRIPTS=" \
             --set-env-vars="CORS_ORIGIN=*,IS_LOCAL_DEV=false" \
             --project="${{ steps.sa.outputs.project_id }}"
           code=$?
