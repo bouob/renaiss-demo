@@ -7,7 +7,9 @@ Workflow **conclusion looked green** because `Deploy Cloud Function merchantApi`
 | Path | Failure |
 |------|---------|
 | **A firebase CLI** | `403` on `firebaseextensions.googleapis.com` (SA missing Extensions Viewer / Firebase Admin surface) |
-| **B gcloud gen2** | Cloud Build: **`function.js does not exist`** — source used `firebase-functions` export in `index.js` only; GCF buildpack / FF expects a Functions Framework entry (and often a `function.js` file). Earlier staging also risked monorepo root `package.json` `"build": vite`. |
+| **B gcloud gen2** | Cloud Build: **`function.js does not exist`** — source used `firebase-functions` export in `index.js` only; GCF buildpack / FF expects a Functions Framework entry (and often a `function.js` file). Earlier staging also risked monorepo root `package.json` `"build": vite`. Follow-ups: reserved `GOOGLE_FUNCTION_TARGET` build-env rejected; YAML env-vars-file broke on URL/base64 → use `--set-env-vars=^|^…`. |
+
+**Fixed in `653725a` / CI run success:** gcloud path stages `main=function.js` + Functions Framework; post-deploy health returns `{ status, service: merchantApi }`.
 
 Hosting multi-site still deployed → UI on `merchant.dokipoki.app` updated; **API stayed on old revision**.
 
