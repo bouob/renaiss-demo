@@ -181,33 +181,16 @@ jobs:
             fs.writeFileSync('.firebaserc', JSON.stringify({ projects: { default: p } }, null, 2));
           "
 
-      - name: Install firebase-tools
-        run: npm install -g firebase-tools@13
-
-      - name: List discoverable functions (debug)
+      - name: Install firebase-tools + gcloud auth
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
-          # Helps diagnose filter mismatches; non-fatal
-          firebase functions:list --project "${{ steps.sa.outputs.project_id }}" --non-interactive || true
-          node -e "import('./server/index.js').then(m=>console.log('exports',Object.keys(m))).catch(e=>console.error('load fail',e))" || true
+          npm install -g firebase-tools@13
+          # SA login for gcloud functions deploy fallback
+          gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS"
+          gcloud config set project "${{ steps.sa.outputs.project_id }}"
 
-      - name: Deploy Cloud Functions
-        env:
-          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
-        run: |
-          set +e
-          # Prefer named export; fall back to full functions deploy
-          firebase deploy --only functions:merchantApi --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
-          code=$?
-          if [ $code -ne 0 ]; then
-            echo "named filter failed ($code); deploying all functions in source"
-            firebase deploy --only functions --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
-            code=$?
-          fi
-          exit $code
-
-      - name: Deploy Hosting preview channel
+      - name: Deploy Hosting preview channel (website first)
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_live_hosting != true }}
         id: channel
         env:
@@ -223,7 +206,6 @@ jobs:
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           if [ -z "$URL" ]; then
             echo "WARNING: could not parse channel URL — see log above"
-            # Don't fail the job solely on URL parse — channel deploy already exited non-zero if it failed
           else
             echo "Preview URL: $URL"
             echo "Merchant path: ${URL%/}/merchant/"
@@ -237,10 +219,59 @@ jobs:
           echo "Deploying LIVE hosting to project ${{ steps.sa.outputs.project_id }}"
           firebase deploy --only hosting --project "${{ steps.sa.outputs.project_id }}" --non-interactive
 
+      - name: Deploy Cloud Function merchantApi
+        id: fn
+        continue-on-error: true
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          set +e
+          # Path A: firebase CLI (may 403 if SA lacks Firebase Extensions Viewer)
+          firebase deploy --only functions:merchantApi --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
+          code=$?
+          if [ $code -eq 0 ]; then
+            echo "mode=firebase" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "firebase CLI failed ($code); trying gcloud gen2 http function"
+          # Path B: gcloud avoids firebaseextensions.googleapis.com list call
+          # Pack server as source; entry-point must match export name
+          gcloud functions deploy merchantApi \
+            --gen2 \
+            --runtime=nodejs20 \
+            --region=asia-east1 \
+            --source=server \
+            --entry-point=merchantApi \
+            --trigger-http \
+            --allow-unauthenticated \
+            --memory=512MiB \
+            --timeout=60s \
+            --set-env-vars="CORS_ORIGIN=*,IS_LOCAL_DEV=false" \
+            --project="${{ steps.sa.outputs.project_id }}"
+          code=$?
+          if [ $code -eq 0 ]; then
+            echo "mode=gcloud" >> "$GITHUB_OUTPUT"
+            # Inject secrets as env (separate update keeps values out of argv history less)
+            gcloud functions deploy merchantApi \
+              --gen2 \
+              --region=asia-east1 \
+              --update-env-vars="RENAISS_INDEX_API_KEY=${{ secrets.RENAISS_INDEX_API_KEY }},RENAISS_INDEX_API_SECRET=${{ secrets.RENAISS_INDEX_API_SECRET }},BSC_RPC_URL=${{ secrets.BSC_RPC_URL }},GCP_SERVICE_ACCOUNT_BASE64=${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }},CORS_ORIGIN=*,IS_LOCAL_DEV=false" \
+              --project="${{ steps.sa.outputs.project_id }}" || true
+            exit 0
+          fi
+          echo "mode=failed" >> "$GITHUB_OUTPUT"
+          exit $code
+
       - name: Summary
         run: |
           echo "## Deploy summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- Project: \`${{ steps.sa.outputs.project_id }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Function: \`merchantApi\` (asia-east1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Function deploy: \`${{ steps.fn.outcome }}\` mode=\`${{ steps.fn.outputs.mode }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Preview channel: \`merchant-preview\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Open: \`${{ steps.channel.outputs.url }}/merchant/\` (if parsed)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Open: \`${{ steps.channel.outputs.url }}/merchant/\`" >> "$GITHUB_STEP_SUMMARY"
+          if [ "${{ steps.fn.outcome }}" != "success" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo "### Function deploy failed" >> "$GITHUB_STEP_SUMMARY"
+            echo "Grant the deploy SA **Firebase Extensions Viewer** (or Editor) on the GCP project, then re-run." >> "$GITHUB_STEP_SUMMARY"
+            echo "Hosting preview may still be live above." >> "$GITHUB_STEP_SUMMARY"
+          fi
