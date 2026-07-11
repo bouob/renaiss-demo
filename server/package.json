@@ -12,7 +12,7 @@
     "start": "node index.js",
     "dev": "cross-env IS_LOCAL_DEV=true node index.js",
     "start:gcf": "functions-framework --target=merchantApi --source=function.js",
-    "test": "node --test tests/moneySanitize.test.js tests/app.smoke.test.js",
+    "test": "node --test tests/moneySanitize.test.js tests/app.smoke.test.js tests/portfolioSeries.test.js",
     "check": "node --check app.js && node --check function.js && node --check index.js && node --check lib/moneySanitize.js && node --check routes/meta.js && node --check routes/insight.js && node --check routes/sales.js && node --check routes/scan.js && node --check services/geminiMerchantService.js && node --check services/geminiMerchantCache.js && node --check services/chainAdapters/bsc/renaissAdapter.js"
   },
   "dependencies": {
