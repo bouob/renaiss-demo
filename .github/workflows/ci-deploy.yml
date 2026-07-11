@@ -184,11 +184,28 @@ jobs:
       - name: Install firebase-tools
         run: npm install -g firebase-tools@13
 
-      - name: Deploy Cloud Function merchantApi
+      - name: List discoverable functions (debug)
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
+          # Helps diagnose filter mismatches; non-fatal
+          firebase functions:list --project "${{ steps.sa.outputs.project_id }}" --non-interactive || true
+          node -e "import('./server/index.js').then(m=>console.log('exports',Object.keys(m))).catch(e=>console.error('load fail',e))" || true
+
+      - name: Deploy Cloud Functions
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          set +e
+          # Prefer named export; fall back to full functions deploy
           firebase deploy --only functions:merchantApi --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
+          code=$?
+          if [ $code -ne 0 ]; then
+            echo "named filter failed ($code); deploying all functions in source"
+            firebase deploy --only functions --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
+            code=$?
+          fi
+          exit $code
 
       - name: Deploy Hosting preview channel
         if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_live_hosting != true }}
@@ -196,18 +213,17 @@ jobs:
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
+          set -e
           # Preview channel — does not replace live Hosting release
           firebase hosting:channel:deploy merchant-preview \
             --project "${{ steps.sa.outputs.project_id }}" \
             --expires 14d \
-            --non-interactive \
-            > channel-out.txt 2>&1 || true
-          cat channel-out.txt
-          # Extract URL if present
+            --non-interactive 2>&1 | tee channel-out.txt
           URL=$(grep -oE 'https://[a-zA-Z0-9._-]+\.web\.app[a-zA-Z0-9/_-]*' channel-out.txt | head -n1 || true)
           echo "url=$URL" >> "$GITHUB_OUTPUT"
           if [ -z "$URL" ]; then
             echo "WARNING: could not parse channel URL — see log above"
+            # Don't fail the job solely on URL parse — channel deploy already exited non-zero if it failed
           else
             echo "Preview URL: $URL"
             echo "Merchant path: ${URL%/}/merchant/"

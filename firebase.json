@@ -2,7 +2,7 @@
   "functions": [
     {
       "source": "server",
-      "codebase": "merchant",
+      "codebase": "default",
       "ignore": [
         "node_modules",
         ".git",
