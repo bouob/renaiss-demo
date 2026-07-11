@@ -886,13 +886,16 @@ function normalizeMetadata(meta) {
 
   const { grade, gradeLabel } = splitGrade(get('Grade'));
 
+  const image = meta.image ?? null;
+  const set = get('Set');
   return {
     grader: get('Grader'),
     grade,
     gradeLabel,
     serial: get('Serial'),
     year: get('Year') ? Number(get('Year')) : null,
-    set: get('Set'),
+    set,
+    setName: set,
     language: get('Language'),
     cardNumber: get('Card Number'),
     vaultRegion: get('Vault Region'),
@@ -900,7 +903,9 @@ function normalizeMetadata(meta) {
     verifierBusiness: get('Verifier Business Name'),
     status: get('Status'),
     productType: meta.product_type ?? null,
-    image: meta.image ?? null,
+    image,
+    // Alias so callers can use either field (holdings already fall back; sales did not)
+    imageUrl: image,
     name: meta.name ?? null,
     collectionName: meta.collection_name ?? null,
     externalUrl: meta.external_url ?? null,

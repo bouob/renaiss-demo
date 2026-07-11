@@ -118,14 +118,16 @@ router.post('/scan', scanLimiter, async (req, res) => {
     const enriched = await runConcurrent(toEnrich, ATTR_CONCURRENCY, async (sale) => {
       try {
         const attrs = await fetchNFTAttributes(sale.tokenId);
+        // normalizeMetadata returns `image` (not imageUrl) + `set` (not setName)
         const serial = attrs?.serial ?? attrs?.cert ?? null;
+        const imageUrl = attrs?.imageUrl ?? attrs?.image ?? sale.imageUrl ?? null;
         return {
           ...sale,
           cert: serial ? String(serial) : sale.cert,
           name: attrs?.name ?? sale.name,
           setName: attrs?.setName ?? attrs?.set ?? sale.setName,
           grade: attrs?.grade ?? attrs?.gradeLabel ?? sale.grade,
-          imageUrl: attrs?.imageUrl ?? sale.imageUrl,
+          imageUrl: typeof imageUrl === 'string' && imageUrl ? imageUrl : null,
         };
       } catch {
         return sale;
