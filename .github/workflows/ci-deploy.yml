@@ -12,8 +12,12 @@ on:
   pull_request:
   workflow_dispatch:
     inputs:
+      deploy_merchant_site:
+        description: 'Deploy root SPA to multi-site merchant-dokipoki-dev (safe; does NOT touch default site)'
+        type: boolean
+        default: true
       deploy_live_hosting:
-        description: 'DANGEROUS if shared Firebase: deploy live hosting (not just preview channel)'
+        description: 'DANGEROUS: deploy path build to DEFAULT site live hosting'
         type: boolean
         default: false
       skip_deploy:
@@ -55,6 +59,8 @@ jobs:
           node --check routes/scan.js
           node --check routes/meta.js
           node --check routes/ticker.js
+          node --check routes/sales.js
+          node --check routes/insight.js
 
       - name: Install client
         working-directory: client
@@ -88,6 +94,7 @@ jobs:
           path: |
             server
             firebase.json
+            firebase.merchant-site.json
             .firebaserc
             package.json
             scripts
@@ -173,12 +180,16 @@ jobs:
           echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
           echo "Resolved Firebase/GCP project: $PROJECT_ID"
 
-      - name: Point .firebaserc at SA project
+      - name: Point .firebaserc at SA project + merchant target
         run: |
           node -e "
             const fs=require('fs');
             const p='${{ steps.sa.outputs.project_id }}';
-            fs.writeFileSync('.firebaserc', JSON.stringify({ projects: { default: p } }, null, 2));
+            fs.writeFileSync('.firebaserc', JSON.stringify({
+              projects: { default: p },
+              targets: { [p]: { hosting: { merchant: ['merchant-dokipoki-dev'] } } },
+              etags: {}
+            }, null, 2));
           "
 
       - name: Install firebase-tools + gcloud auth
@@ -190,14 +201,57 @@ jobs:
           gcloud auth activate-service-account --key-file="$GOOGLE_APPLICATION_CREDENTIALS"
           gcloud config set project "${{ steps.sa.outputs.project_id }}"
 
-      - name: Deploy Hosting preview channel (website first)
-        if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_live_hosting != true }}
+      # Multi-site: merchant-dokipoki-dev root SPA (base=/). Safe — never default site.
+      - name: Ensure merchant Hosting site + target
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_merchant_site != false }}
+        id: merchant_site
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          set +e
+          PROJECT="${{ steps.sa.outputs.project_id }}"
+          firebase hosting:sites:create merchant-dokipoki-dev --project "$PROJECT" --non-interactive 2>&1 | tee site-create.txt
+          # already-exists is fine
+          firebase target:apply hosting merchant merchant-dokipoki-dev --project "$PROJECT" --non-interactive
+          echo "site=merchant-dokipoki-dev" >> "$GITHUB_OUTPUT"
+
+      - name: Build merchant root SPA (base=/)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_merchant_site != false }}
+        working-directory: client
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: |
+          # client deps already installed above; rebuild for root base
+          npx vite build --base /
+
+      - name: Deploy Hosting → merchant-dokipoki-dev (target merchant)
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_merchant_site != false }}
+        id: merchant_hosting
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          set -e
+          PROJECT="${{ steps.sa.outputs.project_id }}"
+          firebase deploy --only hosting:merchant \
+            --config firebase.merchant-site.json \
+            --project "$PROJECT" \
+            --non-interactive 2>&1 | tee merchant-hosting-out.txt
+          echo "url=https://merchant-dokipoki-dev.web.app" >> "$GITHUB_OUTPUT"
+          echo "Merchant multi-site: https://merchant-dokipoki-dev.web.app/"
+
+      - name: Deploy Hosting preview channel (path layout on default site)
+        if: ${{ github.event_name != 'workflow_dispatch' || (inputs.deploy_live_hosting != true && inputs.deploy_merchant_site == false) }}
         id: channel
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
           set -e
-          # Preview channel — does not replace live Hosting release
+          # Preview channel on default site — path /merchant/ layout
           firebase hosting:channel:deploy merchant-preview \
             --project "${{ steps.sa.outputs.project_id }}" \
             --expires 14d \
@@ -211,12 +265,12 @@ jobs:
             echo "Merchant path: ${URL%/}/merchant/"
           fi
 
-      - name: Deploy live Hosting (explicit only)
+      - name: Deploy live Hosting DEFAULT site (explicit only — DANGEROUS)
         if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_live_hosting == true }}
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
         run: |
-          echo "Deploying LIVE hosting to project ${{ steps.sa.outputs.project_id }}"
+          echo "Deploying LIVE hosting to DEFAULT site project ${{ steps.sa.outputs.project_id }}"
           firebase deploy --only hosting --project "${{ steps.sa.outputs.project_id }}" --non-interactive
 
       - name: Deploy Cloud Function merchantApi
@@ -267,11 +321,11 @@ jobs:
           echo "## Deploy summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- Project: \`${{ steps.sa.outputs.project_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Function deploy: \`${{ steps.fn.outcome }}\` mode=\`${{ steps.fn.outputs.mode }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Preview channel: \`merchant-preview\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Open: \`${{ steps.channel.outputs.url }}/merchant/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Multi-site merchant: \`${{ steps.merchant_hosting.outputs.url }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preview channel: \`${{ steps.channel.outputs.url }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Path mount (Dokipoki Deploy to Dev): \`https://dokipoki-dev.web.app/merchant/\`" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ steps.fn.outcome }}" != "success" ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "### Function deploy failed" >> "$GITHUB_STEP_SUMMARY"
             echo "Grant the deploy SA **Firebase Extensions Viewer** (or Editor) on the GCP project, then re-run." >> "$GITHUB_STEP_SUMMARY"
-            echo "Hosting preview may still be live above." >> "$GITHUB_STEP_SUMMARY"
           fi

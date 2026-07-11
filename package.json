@@ -15,6 +15,7 @@
     "build": "npm run build:client && npm run prepare:hosting",
     "build:path": "npm run build:client:path && npm run prepare:hosting",
     "build:root": "npm run build:client:root",
+    "deploy:merchant-site": "npm run build:root && npx -y firebase-tools@13 deploy --only hosting:merchant --config firebase.merchant-site.json --project dokipoki-dev --non-interactive",
     "test:ci": "npm run check:server && npm run build"
   }
 }

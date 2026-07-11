@@ -1,5 +1,15 @@
 {
   "projects": {
-    "default": "REPLACE_AT_DEPLOY"
-  }
+    "default": "dokipoki-dev"
+  },
+  "targets": {
+    "dokipoki-dev": {
+      "hosting": {
+        "merchant": [
+          "merchant-dokipoki-dev"
+        ]
+      }
+    }
+  },
+  "etags": {}
 }

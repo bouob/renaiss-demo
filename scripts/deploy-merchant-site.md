@@ -1,40 +1,48 @@
 # Deploy Merchant root site only (`merchant-dokipoki-dev`)
 
-**Never** point this build at the default Dokipoki hosting site.
+**Never** deploy this build to the default Dokipoki hosting site (`dokipoki-dev`).
 
-## Prerequisites (Console checklist)
+| Site ID | URL |
+|---------|-----|
+| default (dokipoki-dev) | `https://dokipoki-dev.web.app` — main app + optional `/merchant` path |
+| **merchant-dokipoki-dev** | `https://merchant-dokipoki-dev.web.app` — Merchant root SPA |
 
-- [ ] Hosting site `merchant-dokipoki-dev` exists
-- [ ] `merchant.dokipoki.app` attached to **that** site (not default)
-- [ ] DNS/SSL Connected
-- [ ] Auth authorized domain includes `merchant.dokipoki.app`
-- [ ] `merchantApi` `CORS_ORIGIN` includes `https://merchant.dokipoki.app,https://dokipoki-dev.web.app`
-
-## Build root SPA
+## One-time setup
 
 ```bash
-npm run install:all
-# inject VITE_FIREBASE_* as in CI
+# From project-renaiss root; requires firebase login with access to dokipoki-dev
+npx -y firebase-tools@13 login
+npx -y firebase-tools@13 use dokipoki-dev
+
+# Create site (skip if already exists)
+npx -y firebase-tools@13 hosting:sites:create merchant-dokipoki-dev --project dokipoki-dev
+
+# Bind local target "merchant" → site merchant-dokipoki-dev
+# (.firebaserc already has this target; re-run if cloning fresh)
+npx -y firebase-tools@13 target:apply hosting merchant merchant-dokipoki-dev --project dokipoki-dev
+```
+
+## Build + deploy (root `base=/`)
+
+```bash
+# Optional: copy client Firebase public config into client/.env (VITE_*)
 npm run build:root
-# → client/dist at site root (base=/)
+npx -y firebase-tools@13 deploy --only hosting:merchant \
+  --config firebase.merchant-site.json \
+  --project dokipoki-dev
 ```
 
-## Deploy hosting to multi-site only
+Or: `npm run deploy:merchant-site`
 
-```bash
-# Uses firebase.merchant-site.json (site: merchant-dokipoki-dev, public: client/dist)
-npx firebase deploy --only hosting --config firebase.merchant-site.json --project dokipoki-dev --non-interactive
-```
+## Custom domain (Console)
 
-Optional: update function CORS in same change window:
-
-```bash
-# example — use your secret injection process
-# CORS_ORIGIN=https://merchant.dokipoki.app,https://dokipoki-dev.web.app
-npx firebase deploy --only functions:merchantApi --project dokipoki-dev
-# or gcloud functions deploy merchantApi --update-env-vars=...
-```
+1. Hosting → **merchant-dokipoki-dev** → Add custom domain `merchant.dokipoki.app`
+2. Remove that domain from default site if present
+3. Auth → Authorized domains → add `merchant.dokipoki.app` and `merchant-dokipoki-dev.web.app`
+4. `merchantApi` env:  
+   `CORS_ORIGIN=https://merchant.dokipoki.app,https://merchant-dokipoki-dev.web.app,https://dokipoki-dev.web.app`
 
 ## Path mount remains
 
-Dokipoki `Deploy to Dev` still clones this repo and builds default `base=/merchant/` into `client/dist/merchant/` on **default** site. That is independent of this multi-site deploy.
+Dokipoki `Deploy to Dev` still clones this repo with `base=/merchant/` into  
+`dokipoki-dev.web.app/merchant/` — independent of this multi-site deploy.
