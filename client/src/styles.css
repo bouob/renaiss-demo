@@ -48,9 +48,10 @@
   --green: #39ff14;
   --red: #ff4d6d;
 
-  --font-body: "Sora", "Inter", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Oxanium", "Sora", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Code", monospace;
+  /* Same stack as Dokipoki client/src/index.css */
+  --font-body: "TASA Orbiter Display", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "TASA Explorer", "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "TASA Orbiter Display", "Inter", ui-monospace, monospace;
 
   --radius-sm: 2px;
   --radius-md: 6px;
