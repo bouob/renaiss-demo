@@ -1,93 +1,87 @@
-# Merchant Copilot
+# project-renaiss — Merchant Copilot
 
-Merchant Copilot is a merchant-facing card shop intelligence app built on top of Renaiss market data.
+> Dokipoki 把 Renaiss 市場資料變成商家決策：該推什麼、該留什麼、該出清什麼。  
+> Live path（dev）：https://dokipoki-dev.web.app/merchant/  
+> 根站方案 B：https://merchant.dokipoki.app/（multi-site，見 domain checklist）
 
-It helps card shops understand market conditions, compare their inventory against the broader market, identify which cards are worth promoting, and decide which cards to hold or clear.
+## 狀態（2026-07-11）
 
-The product is designed as a lightweight two-page merchant workflow:
+**Version A（市場端 MVP）已可跑殼**：`/wall` + `/movers` + Dashboard。  
+**Version B（庫存層）已接線**：`/scan` `/card` `/related` `/meta` + Inventory 頁。  
+真實資料需填 `docs/KEYS-TODO.md` 內金鑰；無 key 時 fail-open 空資料，不 500。
 
-- `Dashboard`: market overview, featured cards, promotion candidates, fast-selling cards, and inventory cards that deserve attention
-- `Inventory`: merchant inventory management with cost, pricing, market comparison, relative strength, trade-history views, and Push / Hold / Clear suggestions
-
----
-
-## Core Concept
-
-Merchant Copilot turns raw market data into merchant decisions.
-
-Instead of acting as a marketplace, it works as an intelligence and merchandising layer for card shops:
-
-- understand the overall market
-- spot cards with strong momentum
-- identify inventory that is outperforming
-- find cards worth promoting
-- find cards worth clearing
-- support pricing and sell-through decisions
+真相源：[`PLAN.md`](./PLAN.md)
 
 ---
 
-## Features
+## Product overview (EN)
 
-### Dashboard
+Merchant Copilot is a merchant-facing card shop intelligence layer on Renaiss market data — not a marketplace.
 
-The Dashboard gives merchants a fast view of what matters now.
+Two-page workflow:
 
-It includes:
+- **Dashboard** — market index, sparkline / 7d·30d deltas, top constituents, ticker pulse, **Movers** with promote / hold / clear + auto-rotate gallery
+- **Inventory** — wallet scan (pack-cost prefill), manual cert / CSV, wallet-scoped persistence (`hackathonMerchantInventory/{uid}`), cost / PnL / 30d detail
 
-- market index overview
-- mini charts and market change indicators
-- featured cards of the day
-- promotion candidates
-- fast-selling cards
-- inventory cards appearing in index movers
-- cards worth special attention
-
-### Inventory
-
-The Inventory page helps merchants make decisions on the cards they actually hold.
-
-It includes:
-
-- add inventory by search or scan flow
-- simple inventory inputs such as cost and asking price
-- inventory vs market comparison
-- relative strength view
-- trade-history demo views
-- suggested actions such as `Promote`, `Hold`, and `Clear`
-- lightweight inventory actions such as marking a card for promotion, temporarily hiding it, or marking it sold
+Signals convert alpha vs the Renaiss OS Index into **Promote / Hold / Clear**. Price attribution and card deep-links open Renaiss OS Index (same family as Dokipoki Renaiss holdings).
 
 ---
 
-## Data Model
-
-The app is designed around merchant-specific demo data collections such as:
-
-- `hackathonMerchantInventory`
-- `hackathonCardCache`
-- `hackathonFeed`
-
-Depending on the environment, some sections may use preloaded or seeded demo data for showcase purposes.
-
----
-
-## Renaiss Relationship
-
-Merchant Copilot is built around Renaiss market infrastructure and market data.
-
-Examples of how Renaiss data is used:
-
-- Index data: show overall market conditions for card shops
-- FMV series: compare store inventory performance against the broader market
-- Card-level market data: identify high-potential cards for featuring and promotion
-- Trading data: surface cards with real momentum and liquidity
-- Graded card lookup: support fast valuation and merchant decision-making
-- Market signals: convert live card data into Promote, Hold, and Clear actions
-
----
-
-## Getting Started
-
-### Install
+## 啟動
 
 ```bash
+# server
+cd server
 npm install
+# 複製 ../.env.example → ../.env 後填 key（可選）
+npm run dev          # http://localhost:3101  /merchant/api/health
+
+# client
+cd client
+npm install
+npm run dev          # http://localhost:5174/merchant/
+```
+
+API base：
+
+- path 掛載：`/merchant/api/**`
+- 根站 multi-site：`/api/**` 與 `/merchant/api/**`（同一 `merchantApi` function）
+
+## 路由
+
+| Method | Path | 說明 |
+|--------|------|------|
+| GET | `/merchant/api/health` | liveness |
+| GET | `/merchant/api/wall` | L1 指數 + sparkline + top10（1h cache） |
+| GET | `/merchant/api/movers` | movers + alpha + promote/hold/clear |
+| GET | `/merchant/api/ticker` | 近期銷售 pulse（P6） |
+| GET | `/merchant/api/card/:cert` | 單卡 FMV/brief（`?series=1` 含 30d） |
+| GET | `/merchant/api/related/:cert` | ±1 鄰卡（ownership/scan gate） |
+| POST | `/merchant/api/scan` | 錢包掃描（IP rate limit） |
+| GET/PUT | `/merchant/api/meta` | 庫存 metadata（Firebase Auth，`?wallet=`） |
+| POST | `/merchant/api/meta/bulk` | CSV 匯入後端 |
+
+## 建置模式
+
+```bash
+npm run build:path   # base=/merchant/ → dokipoki-dev path 掛載
+npm run build:root   # base=/         → merchant-dokipoki-dev 根站
+```
+
+根站 deploy 指令：`scripts/deploy-merchant-site.md`  
+Console checklist：`docs/merchant-domain-b-checklist-zh.md`
+
+## 機敏資訊
+
+資料夾內不得有任何 key/secret。只放 `.env.example`。詳 `PLAN.md` / `docs/KEYS-TODO.md`。
+
+## CI / 部署（`bouob/renaiss-demo`）
+
+| 觸發 | 行為 |
+|------|------|
+| PR / push | **build**：server `node --check` + client `npm run build`（注入 `VITE_*` secrets） |
+| push `main` | **deploy**：`merchantApi` + Hosting **preview channel** `merchant-preview`（**不蓋** live default hosting） |
+| workflow_dispatch + `deploy_live_hosting` | 才部署 live Hosting（慎用） |
+| Dokipoki `Deploy to Dev` | clone 本 repo → `base=/merchant/` → `dokipoki-dev.web.app/merchant/` |
+
+Secrets 見 GitHub repo settings（與 `.env.example` 對齊）。

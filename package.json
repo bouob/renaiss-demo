@@ -1,0 +1,20 @@
+{
+  "name": "renaiss-merchant",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Renaiss Merchant Copilot monorepo root (client + server)",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client",
+    "dev:server": "npm run dev --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "build:client": "npm run build --prefix client",
+    "build:client:path": "npm run build --prefix client -- --base /merchant/",
+    "build:client:root": "npm run build --prefix client -- --base /",
+    "check:server": "npm run check --prefix server",
+    "prepare:hosting": "node scripts/prepare-hosting.mjs",
+    "build": "npm run build:client && npm run prepare:hosting",
+    "build:path": "npm run build:client:path && npm run prepare:hosting",
+    "build:root": "npm run build:client:root",
+    "test:ci": "npm run check:server && npm run build"
+  }
+}
