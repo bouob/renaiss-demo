@@ -66,11 +66,10 @@ export default function SoldHistoryModal({ sales = [], summary = null, onClose }
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="modal-panel"
+        className="modal-panel modal-panel-wide"
         role="dialog"
         aria-modal="true"
         aria-label={t('sales.title')}
-        style={{ width: 'min(720px, 100%)' }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="modal-head">
@@ -131,10 +130,24 @@ export default function SoldHistoryModal({ sales = [], summary = null, onClose }
                           <td>
                             <div className="sales-card-cell">
                               {s.imageUrl ? (
-                                <img src={s.imageUrl} alt="" className="sales-thumb" loading="lazy" />
-                              ) : (
-                                <div className="sales-thumb sales-thumb-fallback" />
-                              )}
+                                <img
+                                  src={s.imageUrl}
+                                  alt=""
+                                  className="sales-thumb"
+                                  loading="lazy"
+                                  referrerPolicy="no-referrer"
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const fb = e.currentTarget.nextElementSibling;
+                                    if (fb) fb.hidden = false;
+                                  }}
+                                />
+                              ) : null}
+                              <div
+                                className="sales-thumb-fallback"
+                                hidden={Boolean(s.imageUrl)}
+                                aria-hidden="true"
+                              />
                               <div>
                                 <strong className="sales-name">{s.name || s.cert || `#${s.tokenId}`}</strong>
                                 <div className="small">

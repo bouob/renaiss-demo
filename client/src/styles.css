@@ -91,6 +91,8 @@ body {
   font-family: var(--font-body);
   background: var(--bg-base);
   color: var(--text-primary);
+  /* Industry default: body ≥16px (WCAG/community; not a hard WCAG size rule) */
+  font-size: 1rem; /* 16px */
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   overflow-x: clip;
@@ -395,14 +397,15 @@ a:hover {
 /* --- Type --- */
 .label {
   font-family: var(--font-mono);
-  font-size: 0.65rem;
-  line-height: 1rem;
+  /* Micro labels only — uppercase HUD; keep ≥12px for tap readability */
+  font-size: 0.75rem; /* 12px */
+  line-height: 1.25;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.12em;
   color: var(--neon-cyan);
   margin: 0 0 0.45rem;
-  opacity: 0.85;
+  opacity: 0.9;
   text-shadow: 0 0 10px rgba(0, 240, 255, 0.25);
 }
 
@@ -451,14 +454,18 @@ a:hover {
   color: var(--text-muted);
 }
 
-.muted { color: var(--text-secondary); font-size: 0.9375rem; line-height: 1.55; }
+.muted {
+  color: var(--text-secondary);
+  font-size: 1rem; /* body */
+  line-height: 1.55;
+}
 .small {
-  font-size: 0.8125rem;
+  /* Secondary / notes floor 14px (not for long readable prose) */
+  font-size: 0.875rem; /* 14px */
   color: var(--text-muted);
-  line-height: 1.4;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  letter-spacing: 0.02em;
+  line-height: 1.45;
+  font-family: var(--font-body);
+  letter-spacing: 0.01em;
 }
 
 .page-hero {
@@ -530,7 +537,7 @@ a:hover {
   border-radius: 2px;
   border: 1px solid var(--glass-border);
   font-family: var(--font-mono);
-  font-size: 0.75rem;
+  font-size: 0.875rem; /* 14px */
   color: var(--text-secondary);
   background: rgba(0, 240, 255, 0.04);
   font-variant-numeric: tabular-nums;
@@ -561,12 +568,12 @@ a:hover {
 
 .badge {
   display: inline-block;
-  padding: 0.2rem 0.55rem;
+  padding: 0.25rem 0.6rem;
   border-radius: 2px;
   font-family: var(--font-mono);
-  font-size: 0.6rem;
+  font-size: 0.75rem; /* 12px micro status */
   text-transform: uppercase;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.1em;
   font-weight: 700;
   border: 1px solid transparent;
 }
@@ -1062,9 +1069,9 @@ code {
   gap: 0.2rem;
 }
 .inventory-tile-name {
-  font-size: 0.8125rem;
+  font-size: 1rem; /* 16px */
   font-weight: 650;
-  line-height: 1.25;
+  line-height: 1.3;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -1075,10 +1082,16 @@ code {
   justify-content: space-between;
   gap: 0.35rem;
   font-family: var(--font-mono);
-  font-size: 0.72rem;
+  font-size: 0.875rem; /* 14px */
   font-weight: 600;
   font-variant-numeric: tabular-nums;
   margin-top: 0.2rem;
+}
+.inventory-tile-art img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
 }
 
 /* Pagination */
@@ -1116,8 +1129,8 @@ code {
   to { opacity: 1; }
 }
 .modal-panel {
-  width: min(560px, 100%);
-  max-height: min(88vh, 820px);
+  width: min(640px, 100%);
+  max-height: min(92vh, 900px);
   overflow: auto;
   border: 1px solid var(--glass-border-hover);
   border-radius: var(--radius-md);
@@ -1127,6 +1140,13 @@ code {
   box-shadow: var(--shadow-glow), 0 24px 64px rgba(0, 0, 0, 0.65);
   padding: 0;
   position: relative;
+}
+.modal-panel.modal-panel-wide {
+  width: min(960px, 100%);
+  max-height: min(94vh, 960px);
+}
+.modal-panel.modal-panel-detail {
+  width: min(880px, 100%);
 }
 .modal-panel::before {
   content: "";
@@ -1153,30 +1173,52 @@ code {
 }
 .modal-title {
   font-family: var(--font-display);
-  font-size: 1.1rem;
+  font-size: 1.25rem; /* 20px */
   margin: 0;
   letter-spacing: 0.03em;
   text-transform: uppercase;
 }
 .modal-body {
-  padding: 1rem 1.1rem 1.25rem;
+  padding: 1.15rem 1.25rem 1.35rem;
   display: grid;
-  gap: 1rem;
+  gap: 1.15rem;
+  font-size: 1rem;
+}
+.modal-body-detail {
+  grid-template-columns: minmax(200px, 280px) minmax(0, 1fr);
+  align-items: start;
+}
+@media (max-width: 720px) {
+  .modal-body-detail {
+    grid-template-columns: 1fr;
+  }
 }
 .modal-art {
   width: 100%;
-  max-height: 280px;
-  object-fit: contain;
+  aspect-ratio: 3 / 4;
+  max-height: 360px;
   border-radius: var(--radius-sm);
   border: 1px solid rgba(0, 240, 255, 0.2);
   background: #000;
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+.modal-art img {
+  width: 100%;
+  height: 100%;
+  max-height: 360px;
+  object-fit: contain;
+  display: block;
 }
 .modal-art-fallback {
   width: 100%;
-  height: 180px;
+  height: 100%;
+  min-height: 200px;
   border-radius: var(--radius-sm);
+  border: none;
 }
-.modal-meta { gap: 0.65rem; }
+.modal-meta { gap: 0.75rem; min-width: 0; }
 .stat-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1554,46 +1596,58 @@ code {
 .sales-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.8125rem;
+  font-size: 1rem; /* body 16px */
 }
 .sales-table th {
   text-align: left;
   font-family: var(--font-mono);
-  font-size: 0.625rem;
+  font-size: 0.75rem; /* 12px micro header */
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--text-muted);
-  padding: 0.55rem 0.65rem;
+  padding: 0.7rem 0.75rem;
   border-bottom: 1px solid var(--glass-border);
   white-space: nowrap;
 }
 .sales-table td {
-  padding: 0.55rem 0.65rem;
+  padding: 0.7rem 0.75rem;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   vertical-align: middle;
+  font-size: 1rem;
 }
 .sales-table tr:last-child td { border-bottom: none; }
 .sales-card-cell {
   display: flex;
   align-items: center;
-  gap: 0.55rem;
-  min-width: 10rem;
+  gap: 0.7rem;
+  min-width: 12rem;
+  max-width: 22rem;
 }
 .sales-thumb {
-  width: 36px;
-  height: 48px;
+  width: 48px;
+  height: 64px;
   object-fit: cover;
   border-radius: 2px;
   border: 1px solid rgba(0, 240, 255, 0.2);
   flex-shrink: 0;
   background: #000;
+  display: block;
 }
-.sales-thumb-fallback { opacity: 0.4; }
+.sales-thumb-fallback {
+  width: 48px;
+  height: 64px;
+  opacity: 0.45;
+  background: rgba(0, 240, 255, 0.08);
+  border: 1px dashed rgba(0, 240, 255, 0.25);
+  border-radius: 2px;
+  flex-shrink: 0;
+}
 .sales-name {
   display: block;
-  font-size: 0.8125rem;
-  line-height: 1.25;
-  max-width: 14rem;
+  font-size: 1rem;
+  font-weight: 600;
+  line-height: 1.3;
+  max-width: 16rem;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;

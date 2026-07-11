@@ -40,6 +40,7 @@ export default function HoldingDetailModal({
   const [ai, setAi] = useState(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState(null);
+  const [artBroken, setArtBroken] = useState(false);
 
   const cert = item?.cert || item?.id;
   const indexUrl = resolveIndexUrl(item?.href);
@@ -59,6 +60,7 @@ export default function HoldingDetailModal({
     setRelated(null);
     setAi(null);
     setAiError(null);
+    setArtBroken(false);
 
     let cancelled = false;
     (async () => {
@@ -161,7 +163,7 @@ export default function HoldingDetailModal({
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
-        className="modal-panel"
+        className="modal-panel modal-panel-detail"
         role="dialog"
         aria-modal="true"
         aria-label={item.name || cert}
@@ -177,10 +179,15 @@ export default function HoldingDetailModal({
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body modal-body-detail">
           <div className="modal-art">
-            {item.imageUrl ? (
-              <img src={item.imageUrl} alt="" />
+            {item.imageUrl && !artBroken ? (
+              <img
+                src={item.imageUrl}
+                alt=""
+                referrerPolicy="no-referrer"
+                onError={() => setArtBroken(true)}
+              />
             ) : (
               <div className="thumb-fallback modal-art-fallback">{t('common.noArt')}</div>
             )}
