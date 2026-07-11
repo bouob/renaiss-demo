@@ -4,29 +4,15 @@ import { fetchWall } from '../lib/wallApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import { fetchTicker } from '../lib/inventoryApi.js';
 import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
-import Sparkline from '../components/Sparkline.jsx';
 import MoversList from '../components/MoversList.jsx';
 import CardRowLink from '../components/CardRowLink.jsx';
+import IndexTile from '../components/IndexTile.jsx';
 
 function formatPct(decimal) {
   if (!Number.isFinite(decimal)) return '—';
   const pct = decimal * 100;
   const sign = pct > 0 ? '+' : '';
   return `${sign}${pct.toFixed(2)}%`;
-}
-
-function DeltaChip({ label, value }) {
-  if (!Number.isFinite(value)) {
-    return <span className="chip">{label} —</span>;
-  }
-  const cls = value > 0 ? 'pos' : value < 0 ? 'neg' : '';
-  const arrow = value > 0 ? '↑' : value < 0 ? '↓' : '';
-  return (
-    <span className={`chip ${cls}`}>
-      <span className="chip-label">{label}</span>
-      <span className="chip-value">{arrow}{formatPct(value)}</span>
-    </span>
-  );
 }
 
 export default function Dashboard() {
@@ -144,37 +130,8 @@ export default function Dashboard() {
           )}
 
           <section className="grid-2">
-            <div className="glass-card index-tile">
-              <div className="index-tile-head">
-                <div>
-                  <p className="label">{index.label || index.game || t('index.pokemonLabel')}</p>
-                  <p className="big-number">
-                    {Number.isFinite(index.value) ? index.value.toFixed(2) : t('common.emDash')}
-                  </p>
-                </div>
-                <a
-                  className="btn btn-ghost btn-sm"
-                  href={indexHomeUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                >
-                  {t('index.openIndex')}
-                </a>
-              </div>
-              <Sparkline points={index.sparkline} />
-              <div className="delta-row">
-                <DeltaChip label={t('index.d7')} value={index.deltas?.d7} />
-                <DeltaChip label={t('index.d30')} value={index.deltas?.d30} />
-                <DeltaChip label={t('index.d365')} value={index.deltas?.d365} />
-              </div>
-              <p className="small" style={{ marginTop: '0.75rem' }}>
-                {index.constituentCount != null
-                  ? t('index.constituents', { count: index.constituentCount })
-                  : null}
-                {index.updatedAt
-                  ? ` · ${t('index.updated', { when: new Date(index.updatedAt).toLocaleString(dateLocale) })}`
-                  : null}
-              </p>
+            <div className="glass-card">
+              <IndexTile index={index} dateLocale={dateLocale} />
             </div>
 
             <div className="glass-card">
@@ -185,8 +142,8 @@ export default function Dashboard() {
               {top10.length === 0 ? (
                 <div className="empty">{t('dashboard.top10Empty')}</div>
               ) : (
-                <ul className="list">
-                  {top10.slice(0, 10).map((c, i) => (
+                <ul className="list list-compact">
+                  {top10.slice(0, 8).map((c, i) => (
                     <li key={c.href || `${c.name}-${i}`}>
                       <CardRowLink
                         href={c.href}
