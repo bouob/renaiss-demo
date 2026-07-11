@@ -16,10 +16,10 @@
   },
   "status": {
     "active": "持有中",
-    "promoted": "推廣中",
+    "promoted": "推售中",
     "delisted": "已下架",
     "sold": "已售出",
-    "hold": "持有",
+    "hold": "留倉",
     "clear": "出清"
   },
   "acquire": {
@@ -52,13 +52,13 @@
     "emDash": "—"
   },
   "decision": {
-    "promote": "推廣",
-    "hold": "持有",
+    "promote": "推售",
+    "hold": "留倉",
     "clear": "出清",
     "tooltip": {
-      "promote": "30 日相對指數超額 +5% 以上 — 可考慮推廣。",
-      "hold": "落在指數 ±5% 內，或成交過薄無法判定 — 先持有。",
-      "clear": "30 日相對指數落後 5% 以上 — 可考慮出清。"
+      "promote": "近 30 天跑贏指數 5% 以上，建議優先推售。",
+      "hold": "與指數表現相近（5% 內），或成交資料太稀薄無法判定，建議留倉觀察。",
+      "clear": "近 30 天落後指數 5% 以上，建議考慮出清。"
     }
   },
   "index": {
@@ -84,17 +84,17 @@
   "dashboard": {
     "label": "市場情報 · 僅鑑定卡",
     "title": "商家儀表板",
-    "subtitle": "以相對 Renaiss OS Index 的 alpha 決定推廣／持有／出清 — 價源與 Dokipoki Renaiss 持倉相同。點列可開啟 Index 卡頁。",
+    "subtitle": "以相對 Renaiss OS Index 的 alpha 分成推售／留倉／出清 — 價源與 Dokipoki Renaiss 持倉相同。點列可開啟 Index 卡頁。",
     "loading": "載入市場脈絡…",
     "loadError": "無法載入市場資料",
     "tickerLabel": "近期成交脈動",
-    "moversTitle": "Movers · 推廣／持有／出清",
-    "moversHint": "Alpha = 卡 30 日報酬 − 指數 30 日。點列開啟 Renaiss OS Index 鑑定卡頁。",
+    "moversTitle": "Movers · 推售／留倉／出清",
+    "moversHint": "Alpha = 卡 30 日報酬 − 指數 30 日。依超額報酬分桶：推售／留倉／出清（非單純漲跌）。點列開啟 Renaiss OS Index。",
     "moversEmpty": "尚無 movers — 市場 payload 為空或未設定金鑰。",
     "autoRotate": "自動輪播",
     "autoPaused": "已暫停",
-    "summaryPromote": "推廣",
-    "summaryHold": "持有",
+    "summaryPromote": "推售",
+    "summaryHold": "留倉",
     "summaryClear": "出清",
     "viaSeries": "經序列",
     "liqOk": "流動性✓",
@@ -145,8 +145,8 @@
     "pack": "抽包",
     "filters": {
       "all": "全部",
-      "promote": "推廣",
-      "hold": "持有",
+      "promote": "推售",
+      "hold": "留倉",
       "clear": "出清",
       "pack": "抽包來源"
     },
@@ -176,13 +176,13 @@
     "notes": "備註",
     "notesPlaceholder": "商家備註（選填）",
     "active": "持有中",
-    "promote": "推廣",
+    "promote": "標為推售",
     "delist": "下架",
     "sold": "售出",
     "renaissIndex": "Renaiss Index ↗",
     "related": "相鄰 ±1",
     "aiTitle": "AI 商家建議",
-    "aiHint": "依推廣／持有／出清決策產生個人化說明。首次產生後快取 24 小時。",
+    "aiHint": "依推售／留倉／出清決策產生個人化說明。首次產生後快取 24 小時。",
     "aiLoad": "產生建議",
     "aiLoading": "產生中…",
     "aiNeedSignIn": "請登入使用 AI（需為你的庫存卡）。",

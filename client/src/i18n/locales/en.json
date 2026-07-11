@@ -89,7 +89,7 @@
     "loadError": "Failed to load market data",
     "tickerLabel": "Recent sales pulse",
     "moversTitle": "Movers · promote / hold / clear",
-    "moversHint": "Alpha = card 30d return − index 30d. Click a row to open the graded card on Renaiss OS Index.",
+    "moversHint": "Alpha = card 30d return − index 30d. Buckets are merchandising actions (promote / hold / clear), not raw up/down price moves.",
     "moversEmpty": "No movers returned — empty market payload or keys unset.",
     "autoRotate": "auto",
     "autoPaused": "paused",
