@@ -4,11 +4,11 @@
 > Live path（dev）：https://dokipoki-dev.web.app/merchant/  
 > 根站方案 B：https://merchant.dokipoki.app/（multi-site，見 domain checklist）
 
-## 狀態（2026-07-11）
+## 狀態（2026-07-12）
 
-**Version A（市場端 MVP）已可跑殼**：`/wall` + `/movers` + Dashboard。  
-**Version B（庫存層）已接線**：`/scan` `/card` `/related` `/meta` + Inventory 頁。  
-真實資料需填 `docs/KEYS-TODO.md` 內金鑰；無 key 時 fail-open 空資料，不 500。
+**Version A（市場端 MVP）已接上 Dashboard 頁**：前端頁面入口是 `/`，由 client 呼叫 `/wall`、`/movers`、`/ticker` API。  
+**Version B（庫存層）已接線**：前端頁面入口是 `/inventory`，對應 `/scan` `/card` `/related` `/meta` API。  
+真實資料需填 `docs/KEYS-TODO.md` 內金鑰；市場資料相關路由在缺 key 時多為 fail-open 空資料，但 `/meta` 在缺少 Firebase Admin 設定時會回 `503 store_unavailable`。
 
 真相源：[`PLAN.md`](./PLAN.md)
 
@@ -46,6 +46,11 @@ API base：
 
 - path 掛載：`/merchant/api/**`
 - 根站 multi-site：`/api/**` 與 `/merchant/api/**`（同一 `merchantApi` function）
+
+前端頁面：
+
+- `/` → Dashboard
+- `/inventory` → Inventory
 
 ## 路由
 
