@@ -4,7 +4,10 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
   return (
     <div className="app-shell">
       <header className="topnav">
-        <div className="brand">Renaiss Merchant Copilot</div>
+        <div className="brand">
+          <span>Merchant Copilot</span>
+          <span className="brand-sub">Dokipoki · Renaiss</span>
+        </div>
         <nav>
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : undefined)}>
             Dashboard
@@ -14,11 +17,11 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
           </NavLink>
           {authReady && firebaseOk && (
             user ? (
-              <button type="button" className="btn" onClick={onSignOut}>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onSignOut}>
                 {user.displayName || user.email || 'Sign out'}
               </button>
             ) : (
-              <button type="button" className="btn btn-primary" onClick={onSignIn}>
+              <button type="button" className="btn btn-primary btn-sm" onClick={onSignIn}>
                 Sign in
               </button>
             )

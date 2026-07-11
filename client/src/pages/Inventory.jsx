@@ -283,18 +283,20 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   return (
     <main className="stack">
-      <div>
-        <p className="label">Version B · inventory layer</p>
-        <h1 className="h1">Inventory</h1>
-        <p className="muted">
-          Graded cert only. Wallet scan or paste a cert. Push / Hold / Clear from alpha ∩ holdings.
-          {!user && ' (Signed-out local preview — sign in to persist under your uid.)'}
-        </p>
-      </div>
+      <header className="page-hero">
+        <div>
+          <p className="label">Inventory layer · graded cert</p>
+          <h1 className="h1">Merchant Inventory</h1>
+          <p className="muted">
+            Scan a Renaiss wallet or paste a cert. Decisions reuse the same promote / hold / clear rules as Dokipoki Merchant Copilot.
+            {!user && ' Signed-out mode is local-only — sign in to persist under your uid.'}
+          </p>
+        </div>
+      </header>
 
       {error && <div className="empty" style={{ color: 'var(--clear)' }}>{error}</div>}
 
-      <section className="grid-2">
+      <section className="panel-grid">
         <form className="glass-card" onSubmit={handleScan}>
           <p className="label">Wallet scan</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
@@ -308,7 +310,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
               {busy === 'scan' ? 'Scanning…' : 'Scan'}
             </button>
           </div>
-          <p className="small">Blocked platform contracts rejected. IP rate-limited.</p>
+          <p className="small">Platform contracts blocked · IP rate-limited</p>
         </form>
 
         <form className="glass-card" onSubmit={handleManualCert}>
@@ -324,7 +326,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
               {busy === 'cert' ? 'Looking up…' : 'Add'}
             </button>
           </div>
-          <p className="small">No Renaiss data → no price guess.</p>
+          <p className="small">No Renaiss data → no price guess (graded-only)</p>
         </form>
       </section>
 
@@ -358,70 +360,77 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         {enriched.length === 0 ? (
           <div className="empty">No inventory yet — scan a wallet or add a cert.</div>
         ) : (
-          <ul className="list">
+          <div className="stack" style={{ gap: '0.65rem' }}>
             {enriched.map((it) => {
               const cert = it.cert || it.id;
               const decision = it.decision || 'hold';
+              const indexUrl = resolveIndexUrl(it.href);
               return (
-                <li key={cert} className="list-item" style={{ gridTemplateColumns: it.imageUrl ? '48px 1fr' : '1fr', alignItems: 'start' }}>
-                  {it.imageUrl && <img src={it.imageUrl} alt="" loading="lazy" />}
-                  <div style={{ width: '100%' }}>
-                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      {resolveIndexUrl(it.href) ? (
-                        <a
-                          href={resolveIndexUrl(it.href)}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          onClick={(e) => openIndexPage(it.href, e)}
-                          style={{ color: 'inherit', fontWeight: 650 }}
-                        >
-                          {it.name || cert} ↗
-                        </a>
-                      ) : (
-                        <strong>{it.name || cert}</strong>
-                      )}
-                      {it.grade && <span className="chip">{it.grade}</span>}
-                      <span className={`badge ${decision}`}>{decision}</span>
-                      <span className="chip">{it.status || 'active'}</span>
-                    </div>
-                    <div className="small">
-                      cert {cert}
-                      {' · '}FMV {formatUsd(it.fmvUsd)}
-                      {' · '}cost {formatUsd(it.cost)}
-                      {' · '}PnL {formatUsd(it.pnl)}
-                      {' · '}α {Number.isFinite(it.alphaPct30d) ? `${(it.alphaPct30d * 100).toFixed(1)}%` : '—'}
-                      {' · '}suggest {formatUsd(it.suggested)}
-                      {it.costSource ? ` · cost:${it.costSource}` : ''}
-                    </div>
-                    <div className="form-row" style={{ marginTop: '0.5rem', gridTemplateColumns: '120px 1fr' }}>
-                      <input
-                        className="input"
-                        type="number"
-                        step="0.01"
-                        placeholder="cost USD"
-                        defaultValue={Number.isFinite(it.cost) ? it.cost : ''}
-                        onBlur={(e) => saveCost(cert, e.target.value)}
-                      />
-                      <div className="actions">
-                        <button type="button" className="btn" onClick={() => updateStatus(cert, 'promoted')}>Promote</button>
-                        <button type="button" className="btn" onClick={() => updateStatus(cert, 'delisted')}>Delist</button>
-                        <button type="button" className="btn btn-danger" onClick={() => updateStatus(cert, 'sold')}>Sold</button>
-                        <button type="button" className="btn" onClick={() => { setSelectedCert(cert); openRelated(cert); }}>
-                          Related ±1
-                        </button>
-                      </div>
-                    </div>
-                    {Array.isArray(it.series30d) && it.series30d.length > 1 && (
-                      <div style={{ marginTop: '0.5rem' }}>
-                        <p className="label">30d FMV</p>
-                        <Sparkline points={it.series30d} stroke="#0089ff" />
-                      </div>
+                <article key={cert} className="holding-card">
+                  <div className="holding-card-top">
+                    {it.imageUrl ? (
+                      <img src={it.imageUrl} alt="" loading="lazy" />
+                    ) : (
+                      <div className="thumb-fallback">card</div>
                     )}
+                    <div>
+                      <div className="list-item-title-row">
+                        {indexUrl ? (
+                          <a
+                            href={indexUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={(e) => openIndexPage(it.href, e)}
+                            className="list-item-name"
+                            style={{ color: 'inherit' }}
+                          >
+                            {it.name || cert} ↗
+                          </a>
+                        ) : (
+                          <strong className="list-item-name">{it.name || cert}</strong>
+                        )}
+                        {it.grade && <span className="chip">{it.grade}</span>}
+                        <span className={`badge ${decision}`}>{decision}</span>
+                        <span className="chip">{it.status || 'active'}</span>
+                      </div>
+                      <div className="small" style={{ marginTop: '0.3rem' }}>
+                        cert {cert}
+                        {' · '}FMV {formatUsd(it.fmvUsd)}
+                        {' · '}cost {formatUsd(it.cost)}
+                        {' · '}PnL {formatUsd(it.pnl)}
+                        {' · '}α {Number.isFinite(it.alphaPct30d) ? `${(it.alphaPct30d * 100).toFixed(1)}%` : '—'}
+                        {' · '}suggest {formatUsd(it.suggested)}
+                      </div>
+                    </div>
                   </div>
-                </li>
+                  <div className="form-row" style={{ marginBottom: 0, gridTemplateColumns: '120px 1fr' }}>
+                    <input
+                      className="input"
+                      type="number"
+                      step="0.01"
+                      placeholder="cost USD"
+                      defaultValue={Number.isFinite(it.cost) ? it.cost : ''}
+                      onBlur={(e) => saveCost(cert, e.target.value)}
+                    />
+                    <div className="actions">
+                      <button type="button" className="btn btn-primary btn-sm" onClick={() => updateStatus(cert, 'promoted')}>Promote</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => updateStatus(cert, 'delisted')}>Delist</button>
+                      <button type="button" className="btn btn-danger btn-sm" onClick={() => updateStatus(cert, 'sold')}>Sold</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSelectedCert(cert); openRelated(cert); }}>
+                        Related ±1
+                      </button>
+                    </div>
+                  </div>
+                  {Array.isArray(it.series30d) && it.series30d.length > 1 && (
+                    <div>
+                      <p className="label">30d FMV</p>
+                      <Sparkline points={it.series30d} stroke="#0089ff" />
+                    </div>
+                  )}
+                </article>
               );
             })}
-          </ul>
+          </div>
         )}
       </section>
 

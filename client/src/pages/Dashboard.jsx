@@ -70,12 +70,11 @@ export default function Dashboard() {
     <main className="stack">
       <header className="page-hero">
         <div>
-          <p className="label">Version A · market-side</p>
+          <p className="label">Market intelligence · graded only</p>
           <h1 className="h1">Merchant Dashboard</h1>
           <p className="muted">
-            What to push, hold, or clear — driven by Renaiss index alpha.
-            Click any card row to open its page on{' '}
-            <a href={indexHomeUrl} target="_blank" rel="noopener noreferrer">Renaiss OS Index</a>.
+            Promote, hold, or clear using alpha vs the Renaiss OS Index —
+            same price source as Dokipoki Renaiss holdings. Click a row to open the card on Index.
           </p>
         </div>
         {!loading && movers.length > 0 && (
