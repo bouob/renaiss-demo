@@ -5,10 +5,14 @@
 // (no Firebase auth header on Version A/market routes; Version B routes that
 // need an ID token pass one in explicitly via `authToken`).
 
-// API base path invariant (PLAN.md §部署): the server is a separate
-// `merchantApi` function mounted at /merchant/api/**, never under Dokipoki's
-// own /api/**.
-const API_BASE = '/merchant/api';
+// merchantApi is mounted at /merchant/api on the Cloud Function (and also
+// /api for root multi-site rewrites). Path deploy + Dokipoki hosting always
+// use /merchant/api/**. Root site (base '/') prefers /api/** but falls back
+// to /merchant/api if rewrite only has the longer prefix.
+const API_BASE = (typeof import.meta !== 'undefined'
+  && (import.meta.env?.VITE_API_BASE
+    || (import.meta.env?.BASE_URL === '/' ? '/api' : null)))
+  || '/merchant/api';
 
 const DEFAULT_TIMEOUT_MS = 30_000;
 

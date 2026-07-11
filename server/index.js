@@ -36,7 +36,8 @@ const corsOrigin = corsReflect
 app.use(cors({ origin: corsOrigin, credentials: true }));
 app.use(express.json({ limit: '1mb' }));
 
-// All routes under /merchant/api/** — separate merchantApi function boundary
+// Routes under /merchant/api/** (path mount on dokipoki-dev) and /api/**
+// (root multi-site merchant.dokipoki.app). Same router, two prefixes.
 const router = express.Router();
 
 router.get('/health', (req, res) => {
@@ -56,6 +57,7 @@ router.use(scanRouter);
 router.use(metaRouter);
 
 app.use('/merchant/api', router);
+app.use('/api', router);
 
 if (!process.env.RENAISS_INDEX_API_KEY || !process.env.RENAISS_INDEX_API_SECRET) {
   console.warn('[startup] RENAISS_INDEX_API_KEY / RENAISS_INDEX_API_SECRET not set — Renaiss index/FMV lookups will fail-open to null/empty.');

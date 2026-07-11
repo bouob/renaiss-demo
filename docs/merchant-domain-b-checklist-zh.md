@@ -4,6 +4,23 @@
 
 ---
 
+## 0. 現況探針（自動，非 Console）
+
+| 項目 | 最近檢查 | 狀態 |
+|------|----------|------|
+| DNS `merchant.dokipoki.app` | CNAME → `dokipoki-dev.web.app` | 仍指 **default site** |
+| `https://merchant.dokipoki.app/` | HTTP 404 Site Not Found | 根站 **尚未** 可用 |
+| `https://dokipoki-dev.web.app/merchant/` | title `Merchant · Dokipoki` | path 版 OK |
+| `https://dokipoki-dev.web.app/` | title Dokipoki 主站 | 主站 OK |
+| site `merchant-dokipoki-dev` | 本機無 gcloud/firebase CLI | **需 Console 確認** |
+| Auth domain | 本機無法讀 Console | **需 Console 確認** |
+| CORS | 本機無 gcloud | **需 Console 確認** |
+
+> 程式側雙模式已備：`npm run build:path`（預設 path）／`npm run build:root`（根站）；deploy 指令見 `scripts/deploy-merchant-site.md`。  
+> **根站 live deploy 需你核准後才執行。**
+
+---
+
 ## A. Firebase Console（專案 `dokipoki-dev`）
 
 ### A1. 新增 Hosting site

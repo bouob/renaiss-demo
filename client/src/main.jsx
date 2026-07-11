@@ -6,17 +6,17 @@ import { redirectIfCustomDomain } from './lib/hostRedirect.js';
 import './i18n/index.js';
 import './styles.css';
 
-// Run before mounting the router: if we're on the custom domain the visitor
-// is about to be navigated away entirely, so there's no point paying for a
-// React render first (see hostRedirect.js for why this redirect exists).
+// Path mode only: bounce merchant.dokipoki.app → dokipoki-dev…/merchant/
+// Root multi-site (base '/') must NOT bounce — the custom domain IS the app.
 redirectIfCustomDomain();
+
+// Vite BASE_URL is '/merchant/' or '/' depending on MERCHANT_BASE.
+const rawBase = import.meta.env.BASE_URL || '/';
+const routerBasename = rawBase === '/' ? undefined : rawBase.replace(/\/$/, '');
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
-    {/* Deployment invariant (PLAN.md §部署): app is served under
-        dokipoki-dev.web.app/merchant, so the router must know its routes
-        live under that prefix — matches Vite's base: '/merchant/'. */}
-    <BrowserRouter basename="/merchant">
+    <BrowserRouter basename={routerBasename}>
       <App />
     </BrowserRouter>
   </React.StrictMode>,
