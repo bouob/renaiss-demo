@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated } from '../lib/inventoryApi.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
@@ -25,6 +26,7 @@ export default function HoldingDetailModal({
   getToken,
   user,
 }) {
+  const { t } = useTranslation();
   const [series, setSeries] = useState(item?.series30d ?? []);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [returnPct, setReturnPct] = useState(item?.returnPct30d ?? null);
@@ -37,6 +39,7 @@ export default function HoldingDetailModal({
   const cert = item?.cert || item?.id;
   const indexUrl = resolveIndexUrl(item?.href);
   const decision = item?.decision || 'hold';
+  const decisionLabel = t(`decision.${decision}`);
 
   useEffect(() => {
     if (!item) return undefined;
@@ -99,11 +102,11 @@ export default function HoldingDetailModal({
       >
         <div className="modal-head">
           <div>
-            <p className="label">Holding detail</p>
+            <p className="label">{t('detail.label')}</p>
             <h2 className="modal-title">{item.name || cert}</h2>
           </div>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label="Close">
-            Close
+          <button type="button" className="btn btn-ghost btn-sm" onClick={onClose} aria-label={t('common.close')}>
+            {t('common.close')}
           </button>
         </div>
 
@@ -112,57 +115,59 @@ export default function HoldingDetailModal({
             {item.imageUrl ? (
               <img src={item.imageUrl} alt="" />
             ) : (
-              <div className="thumb-fallback modal-art-fallback">no art</div>
+              <div className="thumb-fallback modal-art-fallback">{t('common.noArt')}</div>
             )}
           </div>
 
           <div className="modal-meta stack" style={{ gap: '0.75rem' }}>
             <div className="list-item-title-row">
               {item.grade && <span className="chip">{item.grade}</span>}
-              <span className={`badge ${decision}`}>{decision}</span>
-              <span className="chip">{item.status || 'active'}</span>
-              {item.acquireType && <span className="chip">{item.acquireType}</span>}
+              <span className={`badge ${decision}`}>{decisionLabel}</span>
+              <span className="chip">{t(`status.${item.status || 'active'}`, { defaultValue: item.status || 'active' })}</span>
+              {item.acquireType && (
+                <span className="chip">{t(`acquire.${item.acquireType}`, { defaultValue: item.acquireType })}</span>
+              )}
             </div>
 
             <div className="stat-grid">
               <div className="stat-cell">
-                <span className="label">FMV</span>
+                <span className="label">{t('detail.fmv')}</span>
                 <strong>{formatUsd(item.fmvUsd)}</strong>
               </div>
               <div className="stat-cell">
-                <span className="label">Cost</span>
+                <span className="label">{t('detail.cost')}</span>
                 <strong>{formatUsd(item.cost)}</strong>
               </div>
               <div className="stat-cell">
-                <span className="label">PnL</span>
+                <span className="label">{t('detail.pnl')}</span>
                 <strong className={Number.isFinite(item.pnl) ? (item.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
                   {formatUsd(item.pnl)}
                   {Number.isFinite(item.pnlPct) ? ` (${(item.pnlPct * 100).toFixed(1)}%)` : ''}
                 </strong>
               </div>
               <div className="stat-cell">
-                <span className="label">α vs index</span>
+                <span className="label">{t('detail.alpha')}</span>
                 <strong>
-                  {Number.isFinite(item.alphaPct30d) ? `${(item.alphaPct30d * 100).toFixed(1)}%` : '—'}
+                  {Number.isFinite(item.alphaPct30d) ? `${(item.alphaPct30d * 100).toFixed(1)}%` : t('common.emDash')}
                 </strong>
               </div>
             </div>
 
             <p className="small">
-              cert <code>{cert}</code>
-              {item.costSource ? ` · cost source: ${item.costSource}` : ''}
+              {t('common.cert')} <code>{cert}</code>
+              {item.costSource ? ` · ${t('detail.costSource')}: ${item.costSource}` : ''}
               {item.setName ? ` · ${item.setName}` : ''}
             </p>
 
             <div>
-              <p className="label">30d price trend</p>
-              {seriesLoading && <p className="small">Loading series…</p>}
+              <p className="label">{t('detail.trend30d')}</p>
+              {seriesLoading && <p className="small">{t('detail.loadingSeries')}</p>}
               {!seriesLoading && series.length > 1 ? (
                 <>
                   <Sparkline points={series} height={120} />
                   {Number.isFinite(returnPct) && (
                     <p className="small">
-                      30d return{' '}
+                      {t('detail.return30d')}{' '}
                       <span className={returnPct >= 0 ? 'text-pos' : 'text-neg'}>
                         {(returnPct * 100).toFixed(1)}%
                       </span>
@@ -170,7 +175,7 @@ export default function HoldingDetailModal({
                   )}
                 </>
               ) : (
-                !seriesLoading && <div className="empty">No series for this cert yet.</div>
+                !seriesLoading && <div className="empty">{t('detail.noSeries')}</div>
               )}
             </div>
 
@@ -179,7 +184,7 @@ export default function HoldingDetailModal({
                 className="input"
                 type="number"
                 step="0.01"
-                placeholder="cost USD"
+                placeholder={t('detail.costPlaceholder')}
                 value={costDraft}
                 onChange={(e) => setCostDraft(e.target.value)}
               />
@@ -188,19 +193,19 @@ export default function HoldingDetailModal({
                 className="btn btn-primary btn-sm"
                 onClick={() => onSaveCost?.(cert, costDraft)}
               >
-                Save cost
+                {t('common.saveCost')}
               </button>
             </div>
 
             <div className="actions">
               <button type="button" className="btn btn-primary btn-sm" onClick={() => onUpdateStatus?.(cert, 'promoted')}>
-                Promote
+                {t('detail.promote')}
               </button>
               <button type="button" className="btn btn-ghost btn-sm" onClick={() => onUpdateStatus?.(cert, 'delisted')}>
-                Delist
+                {t('detail.delist')}
               </button>
               <button type="button" className="btn btn-danger btn-sm" onClick={() => onUpdateStatus?.(cert, 'sold')}>
-                Sold
+                {t('detail.sold')}
               </button>
               {indexUrl && (
                 <button
@@ -208,19 +213,19 @@ export default function HoldingDetailModal({
                   className="btn btn-ghost btn-sm"
                   onClick={(e) => openIndexPage(item.href, e)}
                 >
-                  Renaiss Index ↗
+                  {t('detail.renaissIndex')}
                 </button>
               )}
               <button type="button" className="btn btn-ghost btn-sm" disabled={relatedBusy} onClick={loadRelated}>
-                {relatedBusy ? '…' : 'Related ±1'}
+                {relatedBusy ? '…' : t('detail.related')}
               </button>
             </div>
 
             {related && (
               <div>
-                <p className="label">Adjacent certs</p>
+                <p className="label">{t('detail.adjacent')}</p>
                 {related.gated && related.reason === 'not_held' && (
-                  <div className="empty">Gated — not in scan allowlist.</div>
+                  <div className="empty">{t('detail.gated')}</div>
                 )}
                 {related.neighbors?.length > 0 ? (
                   <ul className="list">
@@ -237,7 +242,7 @@ export default function HoldingDetailModal({
                     ))}
                   </ul>
                 ) : (
-                  !related.gated && <div className="empty">No found neighbors.</div>
+                  !related.gated && <div className="empty">{t('detail.noNeighbors')}</div>
                 )}
               </div>
             )}

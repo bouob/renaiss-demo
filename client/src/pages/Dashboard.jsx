@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { fetchWall } from '../lib/wallApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import { fetchTicker } from '../lib/inventoryApi.js';
@@ -29,6 +30,7 @@ function DeltaChip({ label, value }) {
 }
 
 export default function Dashboard() {
+  const { t, i18n } = useTranslation();
   const [wall, setWall] = useState(null);
   const [movers, setMovers] = useState([]);
   const [trades, setTrades] = useState([]);
@@ -51,13 +53,13 @@ export default function Dashboard() {
         setMovers(Array.isArray(moversRes?.movers) ? moversRes.movers : []);
         setTrades(Array.isArray(tickerRes?.trades) ? tickerRes.trades : []);
       } catch (err) {
-        if (!cancelled) setError(err?.message ?? 'Failed to load market data');
+        if (!cancelled) setError(err?.message ?? t('dashboard.loadError'));
       } finally {
         if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [t]);
 
   const index = wall;
   const top10 = index?.top10 ?? index?.topMovers ?? [];
@@ -65,77 +67,74 @@ export default function Dashboard() {
   const promoteCount = movers.filter((m) => m.decision === 'promote').length;
   const clearCount = movers.filter((m) => m.decision === 'clear').length;
   const holdCount = movers.filter((m) => m.decision === 'hold' || !m.decision).length;
+  const dateLocale = i18n.language === 'ja' ? 'ja-JP' : i18n.language === 'zh-TW' ? 'zh-TW' : 'en-US';
 
   return (
     <main className="stack">
       <header className="page-hero">
         <div>
-          <p className="label">Market intelligence · graded only</p>
-          <h1 className="h1">Merchant Dashboard</h1>
-          <p className="muted">
-            Promote, hold, or clear using alpha vs the Renaiss OS Index —
-            same price source as Dokipoki Renaiss holdings. Click a row to open the card on Index.
-          </p>
+          <p className="label">{t('dashboard.label')}</p>
+          <h1 className="h1">{t('dashboard.title')}</h1>
+          <p className="muted">{t('dashboard.subtitle')}</p>
         </div>
         {!loading && movers.length > 0 && (
           <div className="hero-stats" aria-label="Decision summary">
             <div className="hero-stat">
-              <span className="badge promote">promote</span>
+              <span className="badge promote">{t('dashboard.summaryPromote')}</span>
               <strong>{promoteCount}</strong>
             </div>
             <div className="hero-stat">
-              <span className="badge hold">hold</span>
+              <span className="badge hold">{t('dashboard.summaryHold')}</span>
               <strong>{holdCount}</strong>
             </div>
             <div className="hero-stat">
-              <span className="badge clear">clear</span>
+              <span className="badge clear">{t('dashboard.summaryClear')}</span>
               <strong>{clearCount}</strong>
             </div>
           </div>
         )}
       </header>
 
-      {loading && <div className="empty">Loading market context…</div>}
+      {loading && <div className="empty">{t('dashboard.loading')}</div>}
       {error && <div className="empty" style={{ color: 'var(--clear)' }}>{error}</div>}
 
       {!loading && !index && (
-        <div className="empty">
-          No index data yet (keys missing or upstream fail-open). Dashboard shell is live —
-          fill <code>RENAISS_INDEX_API_KEY</code> / <code>_SECRET</code> to populate.
-        </div>
+        <div className="empty">{t('index.noData')}</div>
       )}
 
       {!loading && index && (
         <>
           {trades.length > 0 && (
             <section>
-              <p className="label">Recent sales pulse</p>
+              <p className="label">{t('dashboard.tickerLabel')}</p>
               <div className="ticker">
-                {trades.slice(0, 12).map((t, i) => {
-                  const url = resolveIndexUrl(t.href);
+                {trades.slice(0, 12).map((tr, i) => {
+                  const url = resolveIndexUrl(tr.href);
                   const inner = (
                     <>
-                      <strong>{t.name ?? '—'}</strong>
+                      <strong>{tr.name ?? t('common.emDash')}</strong>
                       <div className="small">
-                        {t.grade ?? ''} · {Number.isFinite(t.priceUsdCents) ? `$${(t.priceUsdCents / 100).toFixed(2)}` : '—'}
+                        {tr.grade ?? ''} · {Number.isFinite(tr.priceUsdCents) ? `$${(tr.priceUsdCents / 100).toFixed(2)}` : t('common.emDash')}
                         {url ? ' · ↗' : ''}
                       </div>
-                      <div className="small">{t.lastSaleAt ? new Date(t.lastSaleAt).toLocaleDateString() : ''}</div>
+                      <div className="small">
+                        {tr.lastSaleAt ? new Date(tr.lastSaleAt).toLocaleDateString(dateLocale) : ''}
+                      </div>
                     </>
                   );
                   return url ? (
                     <a
-                      key={`${t.name}-${t.lastSaleAt}-${i}`}
+                      key={`${tr.name}-${tr.lastSaleAt}-${i}`}
                       className="ticker-item ticker-item-link"
                       href={url}
                       target="_blank"
                       rel="noopener noreferrer"
-                      onClick={(e) => openIndexPage(t.href, e)}
+                      onClick={(e) => openIndexPage(tr.href, e)}
                     >
                       {inner}
                     </a>
                   ) : (
-                    <div key={`${t.name}-${t.lastSaleAt}-${i}`} className="ticker-item">
+                    <div key={`${tr.name}-${tr.lastSaleAt}-${i}`} className="ticker-item">
                       {inner}
                     </div>
                   );
@@ -148,9 +147,9 @@ export default function Dashboard() {
             <div className="glass-card index-tile">
               <div className="index-tile-head">
                 <div>
-                  <p className="label">{index.label || index.game || 'Pokemon index'}</p>
+                  <p className="label">{index.label || index.game || t('index.pokemonLabel')}</p>
                   <p className="big-number">
-                    {Number.isFinite(index.value) ? index.value.toFixed(2) : '—'}
+                    {Number.isFinite(index.value) ? index.value.toFixed(2) : t('common.emDash')}
                   </p>
                 </div>
                 <a
@@ -159,28 +158,32 @@ export default function Dashboard() {
                   target="_blank"
                   rel="noopener noreferrer"
                 >
-                  Open index ↗
+                  {t('index.openIndex')}
                 </a>
               </div>
               <Sparkline points={index.sparkline} />
               <div className="delta-row">
-                <DeltaChip label="7d" value={index.deltas?.d7} />
-                <DeltaChip label="30d" value={index.deltas?.d30} />
-                <DeltaChip label="365d" value={index.deltas?.d365} />
+                <DeltaChip label={t('index.d7')} value={index.deltas?.d7} />
+                <DeltaChip label={t('index.d30')} value={index.deltas?.d30} />
+                <DeltaChip label={t('index.d365')} value={index.deltas?.d365} />
               </div>
               <p className="small" style={{ marginTop: '0.75rem' }}>
-                {index.constituentCount != null ? `${index.constituentCount} constituents` : null}
-                {index.updatedAt ? ` · updated ${new Date(index.updatedAt).toLocaleString()}` : null}
+                {index.constituentCount != null
+                  ? t('index.constituents', { count: index.constituentCount })
+                  : null}
+                {index.updatedAt
+                  ? ` · ${t('index.updated', { when: new Date(index.updatedAt).toLocaleString(dateLocale) })}`
+                  : null}
               </p>
             </div>
 
             <div className="glass-card">
               <div className="index-tile-head">
-                <p className="label" style={{ margin: 0 }}>Top 10 on the board</p>
-                <span className="small">tap → Renaiss Index</span>
+                <p className="label" style={{ margin: 0 }}>{t('index.top10')}</p>
+                <span className="small">{t('index.tapToIndex')}</span>
               </div>
               {top10.length === 0 ? (
-                <div className="empty">No constituents in payload.</div>
+                <div className="empty">{t('dashboard.top10Empty')}</div>
               ) : (
                 <ul className="list">
                   {top10.slice(0, 10).map((c, i) => (
@@ -208,26 +211,21 @@ export default function Dashboard() {
       <section>
         <div className="index-tile-head" style={{ marginBottom: '0.5rem' }}>
           <div>
-            <h2 className="section-title" style={{ margin: 0 }}>Movers · promote / hold / clear</h2>
+            <h2 className="section-title" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</h2>
             <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-              Alpha = card 30d return − index 30d. Click a row to open the graded card on Renaiss OS Index.
+              {t('dashboard.moversHint')}
             </p>
           </div>
         </div>
-        {!loading && (
-          <MoversList
-            movers={movers}
-            emptyLabel="No movers returned — empty market payload or keys unset."
-          />
-        )}
+        {!loading && <MoversList movers={movers} />}
       </section>
 
       <p className="attr">
-        Price data ©{' '}
+        {t('index.attribution', { source: t('index.sourceLabel') })}
+        {' '}
         <a href={indexHomeUrl} target="_blank" rel="noopener noreferrer">
-          Renaiss OS Index
+          {t('index.sourceLabel')}
         </a>
-        {' · '}rows open the upstream card page (same attribution as Dokipoki holdings).
       </p>
     </main>
   );

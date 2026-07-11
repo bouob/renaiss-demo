@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import {
   fetchMeta,
   putMeta,
@@ -26,6 +27,7 @@ function suggestedSell(item) {
 }
 
 export default function Inventory({ user, getToken, firebaseOk }) {
+  const { t } = useTranslation();
   const [items, setItems] = useState([]);
   const [movers, setMovers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -50,7 +52,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
       }
     } catch (err) {
-      setError(err?.message ?? 'Failed to load inventory');
+      setError(err?.message ?? t('inventory.loadFailed'));
       if (user) setItems([]);
     } finally {
       setLoading(false);
@@ -189,8 +191,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         setItems(mapped);
         setCsvNote(
           res?.packCostPrefillCount
-            ? `Scan OK · ${res.packCostPrefillCount}/${mapped.length} pack costs prefilled`
-            : `Scan OK · ${mapped.length} cards`,
+            ? t('inventory.scanOkPrefill', { prefill: res.packCostPrefillCount, total: mapped.length })
+            : t('inventory.scanOk', { total: mapped.length }),
         );
         return;
       }
@@ -214,7 +216,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       });
       await load();
     } catch (err) {
-      setError(err?.message ?? 'Scan failed');
+      setError(err?.message ?? t('inventory.scanFailed'));
     } finally {
       setBusy(null);
     }
@@ -228,8 +230,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       const res = await fetchCard(manualCert.trim(), { series: true });
       if (!res?.found) {
         setError(res?.reason === 'not_found' || res?.found === false
-          ? 'No Renaiss data for this cert (graded-only, no price guess).'
-          : (res?.reason || 'Card lookup failed'));
+          ? t('inventory.certNotFound')
+          : (res?.reason || t('inventory.certFailed')));
         return;
       }
       const item = {
@@ -259,7 +261,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setManualCert('');
       setSelectedCert(item.cert);
     } catch (err) {
-      setError(err?.message ?? 'Cert lookup failed');
+      setError(err?.message ?? t('inventory.certFailed'));
     } finally {
       setBusy(null);
     }
@@ -273,7 +275,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         await withAuth((token) => putMeta(next, { authToken: token }));
         await load();
       } catch (err) {
-        setError(err?.message ?? 'Update failed');
+      setError(err?.message ?? t('inventory.updateFailed'));
       }
     } else {
       setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
@@ -292,14 +294,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const reader = new FileReader();
     reader.onload = async () => {
       const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? ''));
-      setCsvNote(`CSV: ${accepted.length} accepted, ${rejected.length} rejected`);
+      setCsvNote(t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }));
       if (!accepted.length) return;
       if (user) {
         try {
           await withAuth((token) => bulkMeta(accepted, { authToken: token }));
           await load();
         } catch (err) {
-          setError(err?.message ?? 'CSV import failed');
+          setError(err?.message ?? t('inventory.csvFailed'));
         }
       } else {
         setItems((prev) => {
@@ -315,40 +317,40 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   void firebaseOk;
 
   const FILTERS = [
-    { id: 'all', label: 'All' },
-    { id: 'promote', label: 'Promote' },
-    { id: 'hold', label: 'Hold' },
-    { id: 'clear', label: 'Clear' },
-    { id: 'pack', label: 'From pack' },
+    { id: 'all', label: t('inventory.filters.all') },
+    { id: 'promote', label: t('inventory.filters.promote') },
+    { id: 'hold', label: t('inventory.filters.hold') },
+    { id: 'clear', label: t('inventory.filters.clear') },
+    { id: 'pack', label: t('inventory.filters.pack') },
   ];
 
   return (
     <main className="stack">
       <header className="page-hero">
         <div>
-          <p className="label">Inventory · graded cert</p>
-          <h1 className="h1">Holdings</h1>
+          <p className="label">{t('inventory.label')}</p>
+          <h1 className="h1">{t('inventory.title')}</h1>
           <p className="muted">
-            Scan a wallet to load your Renaiss cards — large grid like Dokipoki, open any card for 30d trend and PnL.
-            {!user && ' Signed-out mode is local preview only.'}
+            {t('inventory.subtitle')}
+            {!user && t('inventory.subtitleGuest')}
           </p>
         </div>
         {enriched.length > 0 && (
           <div className="hero-stats" aria-label="Portfolio snapshot">
             <div className="hero-stat">
-              <span className="label">Cards</span>
+              <span className="label">{t('inventory.statsCards')}</span>
               <strong>{portfolioStats.n}</strong>
             </div>
             <div className="hero-stat">
-              <span className="label">FMV</span>
+              <span className="label">{t('inventory.statsFmv')}</span>
               <strong>{formatUsd(portfolioStats.fmv || null)}</strong>
             </div>
             <div className="hero-stat">
-              <span className="label">Cost</span>
+              <span className="label">{t('inventory.statsCost')}</span>
               <strong>{formatUsd(portfolioStats.withCost ? portfolioStats.cost : null)}</strong>
             </div>
             <div className="hero-stat">
-              <span className="label">PnL</span>
+              <span className="label">{t('inventory.statsPnl')}</span>
               <strong className={Number.isFinite(portfolioStats.pnl) ? (portfolioStats.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
                 {formatUsd(portfolioStats.pnl)}
               </strong>
@@ -361,48 +363,48 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
       <section className="panel-grid">
         <form className="glass-card" onSubmit={handleScan}>
-          <p className="label">Wallet scan</p>
+          <p className="label">{t('inventory.walletScan')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
             <input
               className="input"
-              placeholder="0x…"
+              placeholder={t('inventory.walletPlaceholder')}
               value={wallet}
               onChange={(e) => setWallet(e.target.value)}
             />
             <button className="btn btn-primary" type="submit" disabled={busy === 'scan' || !wallet.trim()}>
-              {busy === 'scan' ? 'Scanning…' : 'Scan'}
+              {busy === 'scan' ? t('inventory.scanning') : t('inventory.scan')}
             </button>
           </div>
-          <p className="small">Pack pulls get cost prefilled · IP rate-limited</p>
+          <p className="small">{t('inventory.walletHint')}</p>
         </form>
 
         <form className="glass-card" onSubmit={handleManualCert}>
-          <p className="label">Manual cert</p>
+          <p className="label">{t('inventory.manualCert')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
             <input
               className="input"
-              placeholder="PSA12345678"
+              placeholder={t('inventory.certPlaceholder')}
               value={manualCert}
               onChange={(e) => setManualCert(e.target.value)}
             />
             <button className="btn btn-primary" type="submit" disabled={busy === 'cert' || !manualCert.trim()}>
-              {busy === 'cert' ? 'Looking up…' : 'Add'}
+              {busy === 'cert' ? t('inventory.lookingUp') : t('inventory.add')}
             </button>
           </div>
-          <p className="small">Opens detail with 30d series when found</p>
+          <p className="small">{t('inventory.manualHint')}</p>
         </form>
       </section>
 
       <section className="glass-card">
-        <p className="label">CSV import</p>
+        <p className="label">{t('inventory.csvImport')}</p>
         <input type="file" accept=".csv,text/csv" onChange={(e) => handleCsvFile(e.target.files?.[0])} />
-        <p className="small">Header must include <code>cert</code></p>
+        <p className="small">{t('inventory.csvHint')} <code>cert</code></p>
         {csvNote && <p className="small">{csvNote}</p>}
       </section>
 
       {onBoard.length > 0 && (
         <section className="glass-card">
-          <p className="label">On the board · movers ∩ inventory ({onBoard.length})</p>
+          <p className="label">{t('inventory.onBoard', { count: onBoard.length })}</p>
           <div className="chip-row">
             {onBoard.slice(0, 12).map((it) => (
               <button
@@ -422,10 +424,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       <section className="inventory-zone">
         <div className="inventory-zone-head">
           <div>
-            <h2 className="section-title">Your inventory</h2>
+            <h2 className="section-title">{t('inventory.yourInventory')}</h2>
             <p className="small">
-              {loading ? 'Loading…' : `${filtered.length} of ${enriched.length} cards`}
-              {filter !== 'all' ? ` · filter: ${filter}` : ''}
+              {loading
+                ? t('common.loading')
+                : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length })}
+              {filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
             </p>
           </div>
           <div className="filter-pills" role="tablist" aria-label="Filter holdings">
@@ -445,9 +449,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         </div>
 
         {enriched.length === 0 ? (
-          <div className="empty">Scan a wallet or add a cert to build your inventory grid.</div>
+          <div className="empty">{t('inventory.empty')}</div>
         ) : filtered.length === 0 ? (
-          <div className="empty">No cards match this filter.</div>
+          <div className="empty">{t('inventory.filterEmpty')}</div>
         ) : (
           <>
             <div className="inventory-grid">
@@ -465,9 +469,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                       {it.imageUrl ? (
                         <img src={it.imageUrl} alt="" loading="lazy" />
                       ) : (
-                        <div className="thumb-fallback inventory-tile-fallback">card</div>
+                        <div className="thumb-fallback inventory-tile-fallback">{t('common.card')}</div>
                       )}
-                      <span className={`badge inventory-tile-badge ${decision}`}>{decision}</span>
+                      <span className={`badge inventory-tile-badge ${decision}`}>
+                        {t(`decision.${decision}`)}
+                      </span>
                     </div>
                     <div className="inventory-tile-body">
                       <strong className="inventory-tile-name">{it.name || cert}</strong>
@@ -483,7 +489,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                         )}
                       </div>
                       {it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT' ? (
-                        <span className="chip" style={{ marginTop: '0.25rem' }}>pack</span>
+                        <span className="chip" style={{ marginTop: '0.25rem' }}>{t('inventory.pack')}</span>
                       ) : null}
                     </div>
                   </button>
@@ -499,10 +505,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   disabled={safePage <= 1}
                   onClick={() => setPage((p) => Math.max(1, p - 1))}
                 >
-                  Previous
+                  {t('common.previous')}
                 </button>
                 <span className="small">
-                  Page {safePage} / {totalPages}
+                  {t('common.pageOf', { page: safePage, total: totalPages })}
                 </span>
                 <button
                   type="button"
@@ -510,7 +516,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   disabled={safePage >= totalPages}
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 >
-                  Next
+                  {t('common.next')}
                 </button>
               </div>
             )}

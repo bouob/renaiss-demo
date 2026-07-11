@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import App from './App.jsx';
 import { redirectIfCustomDomain } from './lib/hostRedirect.js';
+import './i18n/index.js';
 import './styles.css';
 
 // Run before mounting the router: if we're on the custom domain the visitor

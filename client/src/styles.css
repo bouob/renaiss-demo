@@ -898,3 +898,31 @@ code {
   font-size: 1rem;
   font-variant-numeric: tabular-nums;
 }
+
+/* Language switcher */
+.lang-switcher {
+  display: inline-flex;
+  gap: 0.2rem;
+  padding: 0.15rem;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border);
+  background: var(--bg-surface);
+}
+.lang-pill {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 0.6875rem;
+  font-weight: 650;
+  letter-spacing: 0.04em;
+  padding: 0.3rem 0.5rem;
+  border-radius: var(--radius-xl);
+  cursor: pointer;
+  font-family: inherit;
+}
+.lang-pill:hover { color: var(--text-primary); }
+.lang-pill.active {
+  color: var(--text-primary);
+  background: var(--interactive-bg);
+}
