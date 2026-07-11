@@ -66,6 +66,8 @@
     "moversTitle": "Movers · promote / hold / clear",
     "moversHint": "Alpha = card 30d return − index 30d. Click a row to open the graded card on Renaiss OS Index.",
     "moversEmpty": "No movers returned — empty market payload or keys unset.",
+    "autoRotate": "auto",
+    "autoPaused": "paused",
     "summaryPromote": "promote",
     "summaryHold": "hold",
     "summaryClear": "clear",

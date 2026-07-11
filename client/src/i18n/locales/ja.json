@@ -66,6 +66,8 @@
     "moversTitle": "Movers · プッシュ／ホールド／クリア",
     "moversHint": "Alpha = カード30日リターン − 指数30日。行クリックで Renaiss OS Index の鑑定カードを開きます。",
     "moversEmpty": "movers なし — ペイロード空またはキー未設定。",
+    "autoRotate": "自動",
+    "autoPaused": "一時停止",
     "summaryPromote": "プッシュ",
     "summaryHold": "ホールド",
     "summaryClear": "クリア",

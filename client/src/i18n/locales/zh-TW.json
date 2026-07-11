@@ -66,6 +66,8 @@
     "moversTitle": "Movers · 推廣／持有／出清",
     "moversHint": "Alpha = 卡 30 日報酬 − 指數 30 日。點列開啟 Renaiss OS Index 鑑定卡頁。",
     "moversEmpty": "尚無 movers — 市場 payload 為空或未設定金鑰。",
+    "autoRotate": "自動輪播",
+    "autoPaused": "已暫停",
     "summaryPromote": "推廣",
     "summaryHold": "持有",
     "summaryClear": "出清",

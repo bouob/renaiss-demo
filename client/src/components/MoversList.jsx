@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 
 /** Large cards per page (3–5 range; 4 fits most desktops). */
 const PAGE_SIZE = 4;
+/** Auto-rotate interval (ms). Pauses on hover / focus / reduced-motion. */
+const AUTO_MS = 4500;
 
 function formatPct(decimal) {
   if (!Number.isFinite(decimal)) return '—';
@@ -21,6 +23,13 @@ export default function MoversList({ movers = [], emptyLabel }) {
   const { t } = useTranslation();
   const empty = emptyLabel || t('dashboard.moversEmpty');
   const [page, setPage] = useState(1);
+  const [paused, setPaused] = useState(false);
+  const reducedMotion = useRef(false);
+
+  useEffect(() => {
+    reducedMotion.current = typeof window !== 'undefined'
+      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  }, []);
 
   useEffect(() => {
     setPage(1);
@@ -33,13 +42,36 @@ export default function MoversList({ movers = [], emptyLabel }) {
     return movers.slice(start, start + PAGE_SIZE);
   }, [movers, safePage]);
 
+  // Auto carousel: 1 → 2 → … → last → 1
+  useEffect(() => {
+    if (totalPages <= 1 || paused || reducedMotion.current) return undefined;
+    const id = window.setInterval(() => {
+      setPage((p) => {
+        const cur = Math.min(p, totalPages);
+        return cur >= totalPages ? 1 : cur + 1;
+      });
+    }, AUTO_MS);
+    return () => window.clearInterval(id);
+  }, [totalPages, paused, movers.length]);
+
   if (!movers.length) {
     return <div className="empty">{empty}</div>;
   }
 
+  const goPrev = () => setPage((p) => (p <= 1 ? totalPages : p - 1));
+  const goNext = () => setPage((p) => (p >= totalPages ? 1 : p + 1));
+
   return (
-    <div className="movers-gallery">
-      <div className="movers-grid">
+    <div
+      className="movers-gallery"
+      onMouseEnter={() => setPaused(true)}
+      onMouseLeave={() => setPaused(false)}
+      onFocusCapture={() => setPaused(true)}
+      onBlurCapture={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget)) setPaused(false);
+      }}
+    >
+      <div className="movers-grid" key={safePage}>
         {pageItems.map((m, i) => {
           const key = m.slug || m.href || `${m.name}-${m.cardNumber}-${i}`;
           const decision = m.decision || 'hold';
@@ -110,28 +142,59 @@ export default function MoversList({ movers = [], emptyLabel }) {
       </div>
 
       {totalPages > 1 && (
-        <div className="pagination">
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={safePage <= 1}
-            onClick={() => setPage((p) => Math.max(1, p - 1))}
-          >
-            {t('common.previous')}
-          </button>
-          <span className="small">
-            {t('common.pageOf', { page: safePage, total: totalPages })}
-            {' · '}
-            {movers.length}
-          </span>
-          <button
-            type="button"
-            className="btn btn-ghost btn-sm"
-            disabled={safePage >= totalPages}
-            onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-          >
-            {t('common.next')}
-          </button>
+        <div className="movers-controls">
+          <div className="pagination">
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={goPrev}
+              aria-label={t('common.previous')}
+            >
+              {t('common.previous')}
+            </button>
+            <span className="small movers-page-meta">
+              {t('common.pageOf', { page: safePage, total: totalPages })}
+              {' · '}
+              {movers.length}
+              {!paused && !reducedMotion.current ? (
+                <span className="movers-auto-hint"> · {t('dashboard.autoRotate', { defaultValue: 'auto' })}</span>
+              ) : (
+                <span className="movers-auto-hint"> · {t('dashboard.autoPaused', { defaultValue: 'paused' })}</span>
+              )}
+            </span>
+            <button
+              type="button"
+              className="btn btn-ghost btn-sm"
+              onClick={goNext}
+              aria-label={t('common.next')}
+            >
+              {t('common.next')}
+            </button>
+          </div>
+          <div className="movers-dots" role="tablist" aria-label={t('dashboard.moversTitle')}>
+            {Array.from({ length: totalPages }, (_, i) => {
+              const n = i + 1;
+              return (
+                <button
+                  key={n}
+                  type="button"
+                  role="tab"
+                  aria-selected={n === safePage}
+                  className={`movers-dot ${n === safePage ? 'active' : ''}`}
+                  onClick={() => setPage(n)}
+                  title={`${n}/${totalPages}`}
+                />
+              );
+            })}
+          </div>
+          {!reducedMotion.current && (
+            <div
+              className={`movers-progress ${paused ? 'paused' : ''}`}
+              key={`progress-${safePage}-${paused}`}
+              style={{ '--auto-ms': `${AUTO_MS}ms` }}
+              aria-hidden="true"
+            />
+          )}
         </div>
       )}
     </div>
