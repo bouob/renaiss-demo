@@ -4,6 +4,8 @@
  * Rejects malformed rows (both accept and reject branches).
  */
 
+import { parseMoney, parseQty, MAX_MONEY } from './moneyInput.js';
+
 const REQUIRED = 'cert';
 
 function normalizeHeader(h) {
@@ -43,17 +45,35 @@ export function parseInventoryCsv(text) {
       continue;
     }
     const qtyRaw = idx('qty') >= 0 ? cols[idx('qty')] : '1';
-    const qty = Number(qtyRaw);
-    if (qtyRaw !== '' && qtyRaw != null && !Number.isFinite(qty)) {
-      rejected.push({ row: i + 1, reason: 'invalid_qty', raw });
-      continue;
+    if (qtyRaw !== '' && qtyRaw != null) {
+      const q = parseQty(qtyRaw);
+      if (q.error === 'invalid') {
+        rejected.push({ row: i + 1, reason: 'invalid_qty', raw });
+        continue;
+      }
+    }
+    const costCell = cols[idx('cost')];
+    const listCell = cols[idx('listprice')] ?? cols[idx('list_price')];
+    if (costCell) {
+      const c = parseMoney(costCell);
+      if (c.error) {
+        rejected.push({ row: i + 1, reason: `invalid_cost_${c.error}`, raw });
+        continue;
+      }
+    }
+    if (listCell) {
+      const l = parseMoney(listCell);
+      if (l.error) {
+        rejected.push({ row: i + 1, reason: `invalid_listPrice_${l.error}`, raw });
+        continue;
+      }
     }
     accepted.push({
       cert,
-      qty: Number.isFinite(qty) ? qty : 1,
-      cost: numOrNull(cols[idx('cost')]),
-      listPrice: numOrNull(cols[idx('listprice')] ?? cols[idx('list_price')]),
-      name: cols[idx('name')] || null,
+      qty: parseQty(qtyRaw).value,
+      cost: parseMoney(costCell).value,
+      listPrice: parseMoney(listCell).value,
+      name: (cols[idx('name')] || '').slice(0, 200) || null,
       status: cols[idx('status')] || 'active',
     });
   }
@@ -61,8 +81,5 @@ export function parseInventoryCsv(text) {
   return { accepted, rejected };
 }
 
-function numOrNull(v) {
-  if (v === undefined || v === null || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
+// re-export for callers that document caps
+export { MAX_MONEY };

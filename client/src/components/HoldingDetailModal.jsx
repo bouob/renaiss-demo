@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
+import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
@@ -105,18 +106,21 @@ export default function HoldingDetailModal({
   }
 
   function saveAll() {
-    const cost = costDraft === '' ? null : Number(costDraft);
-    const listPrice = listDraft === '' ? null : Number(listDraft);
+    const costParsed = parseMoney(costDraft);
+    const listParsed = parseMoney(listDraft);
+    if (costParsed.error || listParsed.error) return;
+    const cost = costParsed.value;
+    const listPrice = listParsed.value;
     if (onSaveDetails) {
       onSaveDetails(cert, {
-        cost: Number.isFinite(cost) ? cost : null,
-        listPrice: Number.isFinite(listPrice) ? listPrice : null,
-        notes: notesDraft || null,
-        costSource: Number.isFinite(cost) ? 'manual' : item.costSource,
+        cost,
+        listPrice,
+        notes: (notesDraft || '').slice(0, 1000) || null,
+        costSource: cost != null ? 'manual' : item.costSource,
         status: item.status || 'active',
       });
     } else {
-      onSaveCost?.(cert, costDraft);
+      onSaveCost?.(cert, costDraft === '' ? '' : String(cost ?? ''));
     }
   }
 
@@ -261,22 +265,34 @@ export default function HoldingDetailModal({
                 <p className="label">{t('detail.cost')}</p>
                 <input
                   className="input"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  {...MONEY_INPUT_ATTRS}
+                  autoComplete="off"
                   placeholder={t('detail.costPlaceholder')}
                   value={costDraft}
-                  onChange={(e) => setCostDraft(e.target.value)}
+                  onChange={(e) => setCostDraft(clampMoneyInput(e.target.value))}
+                  onBlur={() => {
+                    const p = parseMoney(costDraft);
+                    if (p.value != null) setCostDraft(String(p.value));
+                    else if (costDraft !== '') setCostDraft('');
+                  }}
                 />
               </div>
               <div>
                 <p className="label">{t('detail.listPrice')}</p>
                 <input
                   className="input"
-                  type="number"
-                  step="0.01"
+                  type="text"
+                  {...MONEY_INPUT_ATTRS}
+                  autoComplete="off"
                   placeholder={t('detail.listPricePlaceholder')}
                   value={listDraft}
-                  onChange={(e) => setListDraft(e.target.value)}
+                  onChange={(e) => setListDraft(clampMoneyInput(e.target.value))}
+                  onBlur={() => {
+                    const p = parseMoney(listDraft);
+                    if (p.value != null) setListDraft(String(p.value));
+                    else if (listDraft !== '') setListDraft('');
+                  }}
                 />
               </div>
             </div>
@@ -285,9 +301,10 @@ export default function HoldingDetailModal({
               <textarea
                 className="input"
                 rows={2}
+                maxLength={1000}
                 placeholder={t('detail.notesPlaceholder')}
                 value={notesDraft}
-                onChange={(e) => setNotesDraft(e.target.value)}
+                onChange={(e) => setNotesDraft(e.target.value.slice(0, 1000))}
               />
             </div>
             <button type="button" className="btn btn-primary btn-sm" onClick={saveAll}>

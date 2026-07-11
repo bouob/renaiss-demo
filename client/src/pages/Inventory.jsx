@@ -12,6 +12,7 @@ import {
 import { fetchMovers } from '../lib/moversApi.js';
 import { classifyMerchantDecisionDetail } from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
+import { parseMoney } from '../lib/moneyInput.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
@@ -459,10 +460,25 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   }
 
   async function saveCost(cert, cost) {
+    const parsed = parseMoney(cost);
     await updateStatus(cert, items.find((i) => (i.cert || i.id) === cert)?.status || 'active', {
-      cost: cost === '' || cost == null ? null : Number(cost),
+      cost: parsed.value,
       costSource: 'manual',
     });
+  }
+
+  async function saveDetailsGuarded(cert, patch = {}) {
+    const next = { ...patch };
+    if (patch.cost !== undefined) {
+      next.cost = parseMoney(patch.cost).value;
+    }
+    if (patch.listPrice !== undefined) {
+      next.listPrice = parseMoney(patch.listPrice).value;
+    }
+    if (typeof next.notes === 'string') {
+      next.notes = next.notes.slice(0, 1000) || null;
+    }
+    return saveDetails(cert, next);
   }
 
   /** Patch detail fields (cost / listPrice / notes / status). */
@@ -772,7 +788,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           wallet={boundWallet}
           onClose={() => setSelectedCert(null)}
           onSaveCost={saveCost}
-          onSaveDetails={saveDetails}
+          onSaveDetails={saveDetailsGuarded}
           onUpdateStatus={updateStatus}
         />
       )}

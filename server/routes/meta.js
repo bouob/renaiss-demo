@@ -9,6 +9,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
 import { isValidAddressShape } from '../lib/walletGuard.js';
+import { sanitizeMoney, sanitizeQty, sanitizeNonNegInt } from '../lib/moneySanitize.js';
 
 const router = Router();
 export const COLLECTION = 'hackathonMerchantInventory';
@@ -27,12 +28,6 @@ const COST_SOURCES = new Set([
 
 function itemRef(uid, cert) {
   return adminDb.collection(COLLECTION).doc(uid).collection('items').doc(cert);
-}
-
-function sanitizeNumber(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
 }
 
 function sanitizeWallet(v) {
@@ -58,25 +53,28 @@ function sanitizeItem(body, cert) {
   const costSource = typeof body.costSource === 'string' && COST_SOURCES.has(body.costSource)
     ? body.costSource
     : null;
+  // Money: ≥0, ≤999_999_999, max 2 decimals (no negatives / scientific notation).
+  // priceUsdCents is integer cents — cap at MAX_MONEY * 100.
+  const priceUsdCents = sanitizeNonNegInt(body.priceUsdCents, { max: 999_999_999 * 100 });
   const patch = {
     cert,
     wallet,
-    cost: sanitizeNumber(body.cost),
-    listPrice: sanitizeNumber(body.listPrice),
-    qty: sanitizeNumber(body.qty) ?? 1,
-    target: sanitizeNumber(body.target),
-    stop: sanitizeNumber(body.stop),
+    cost: sanitizeMoney(body.cost),
+    listPrice: sanitizeMoney(body.listPrice),
+    qty: sanitizeQty(body.qty),
+    target: sanitizeMoney(body.target),
+    stop: sanitizeMoney(body.stop),
     status,
     name: sanitizeString(body.name, 200),
     setName: sanitizeString(body.setName, 200),
     grade: sanitizeString(body.grade, 40),
     imageUrl: sanitizeString(body.imageUrl, 500),
-    priceUsdCents: sanitizeNumber(body.priceUsdCents),
+    priceUsdCents,
     href: sanitizeString(body.href, 300),
     notes: sanitizeString(body.notes, 1000),
     acquireType,
     costSource,
-    onChainCostUsd: sanitizeNumber(body.onChainCostUsd),
+    onChainCostUsd: sanitizeMoney(body.onChainCostUsd),
     packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
     updatedAt: new Date().toISOString(),
   };

@@ -8,6 +8,7 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { isValidAddressShape } from '../lib/walletGuard.js';
+import { sanitizeMoney, sanitizeNonNegInt, MAX_BLOCK } from '../lib/moneySanitize.js';
 
 const router = Router();
 const COLLECTION = 'hackathonMerchantSales';
@@ -27,12 +28,6 @@ function sanitizeWallet(v) {
   return isValidAddressShape(w) ? w : null;
 }
 
-function sanitizeNumber(v) {
-  if (v === null || v === undefined || v === '') return null;
-  const n = Number(v);
-  return Number.isFinite(n) ? n : null;
-}
-
 function sanitizeSale(row, wallet) {
   const id = typeof row?.id === 'string' && row.id.length >= 4 && row.id.length <= 96
     ? row.id
@@ -41,6 +36,14 @@ function sanitizeSale(row, wallet) {
   const saleType = typeof row.saleType === 'string' && SALE_TYPES.has(row.saleType)
     ? row.saleType
     : 'MARKETPLACE';
+  // realized P&L may be negative (loss) — allow signed, still cap magnitude
+  let realizedPnlUsd = null;
+  if (row.realizedPnlUsd != null && row.realizedPnlUsd !== '') {
+    const p = Number(row.realizedPnlUsd);
+    if (Number.isFinite(p) && Math.abs(p) <= 999_999_999) {
+      realizedPnlUsd = Math.round(p * 100) / 100;
+    }
+  }
   return {
     id,
     wallet,
@@ -52,11 +55,11 @@ function sanitizeSale(row, wallet) {
     imageUrl: typeof row.imageUrl === 'string' ? row.imageUrl.slice(0, 500) : null,
     saleType,
     soldAt: typeof row.soldAt === 'string' ? row.soldAt.slice(0, 40) : null,
-    soldBlock: sanitizeNumber(row.soldBlock),
-    soldPriceUsd: sanitizeNumber(row.soldPriceUsd),
-    costBasisUsd: sanitizeNumber(row.costBasisUsd),
+    soldBlock: sanitizeNonNegInt(row.soldBlock, { max: MAX_BLOCK }),
+    soldPriceUsd: sanitizeMoney(row.soldPriceUsd),
+    costBasisUsd: sanitizeMoney(row.costBasisUsd),
     costSource: typeof row.costSource === 'string' ? row.costSource.slice(0, 40) : null,
-    realizedPnlUsd: sanitizeNumber(row.realizedPnlUsd),
+    realizedPnlUsd,
     saleTxHash: typeof row.saleTxHash === 'string' ? row.saleTxHash.slice(0, 80) : null,
     counterparty: typeof row.counterparty === 'string' ? row.counterparty.slice(0, 64) : null,
     updatedAt: new Date().toISOString(),
