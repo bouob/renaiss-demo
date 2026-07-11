@@ -13,8 +13,10 @@ export function fetchRelated(cert, { authToken } = {}) {
   return getJson(`/related/${encodeURIComponent(cert)}`, { authToken });
 }
 
-export function fetchMeta({ authToken } = {}) {
-  return getJson('/meta', { authToken });
+/** Wallet-scoped inventory rows. Without wallet, server returns []. */
+export function fetchMeta({ authToken, wallet } = {}) {
+  const q = wallet ? `?wallet=${encodeURIComponent(wallet)}` : '';
+  return getJson(`/meta${q}`, { authToken });
 }
 
 export function putMeta(item, { authToken } = {}) {

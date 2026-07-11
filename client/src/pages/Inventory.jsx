@@ -26,6 +26,11 @@ function suggestedSell(item) {
   return null;
 }
 
+function normalizeWallet(addr) {
+  const w = String(addr ?? '').trim();
+  return /^0x[0-9a-fA-F]{40}$/.test(w) ? w.toLowerCase() : '';
+}
+
 export default function Inventory({ user, getToken, firebaseOk }) {
   const { t } = useTranslation();
   const [items, setItems] = useState([]);
@@ -33,6 +38,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [wallet, setWallet] = useState('');
+  /** Last wallet that successfully loaded inventory (empty = no data shown). */
+  const [boundWallet, setBoundWallet] = useState('');
   const [manualCert, setManualCert] = useState('');
   const [busy, setBusy] = useState(null);
   const [csvNote, setCsvNote] = useState(null);
@@ -40,33 +47,75 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
 
-  const load = useCallback(async () => {
-    setLoading(true);
-    setError(null);
+  // Market movers only — never auto-load inventory without a wallet.
+  const loadMovers = useCallback(async () => {
     try {
       const moversRes = await fetchMovers().catch(() => ({ movers: [] }));
       setMovers(Array.isArray(moversRes?.movers) ? moversRes.movers : []);
-      if (user) {
-        const token = await getToken();
-        const metaRes = await fetchMeta({ authToken: token });
-        setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
-      }
-    } catch (err) {
-      setError(err?.message ?? t('inventory.loadFailed'));
-      if (user) setItems([]);
-    } finally {
-      setLoading(false);
+    } catch {
+      setMovers([]);
     }
-  }, [user, getToken]);
+  }, []);
 
   useEffect(() => {
-    load();
-  }, [load]);
+    loadMovers();
+  }, [loadMovers]);
+
+  // Sign-out / auth drop: wipe inventory UI (do not keep previous wallet cards).
+  useEffect(() => {
+    if (!user) {
+      setItems([]);
+      setBoundWallet('');
+      setSelectedCert(null);
+      setCsvNote(null);
+      setPage(1);
+      setError(null);
+    }
+  }, [user]);
 
   // Reset page when filter / inventory length changes
   useEffect(() => {
     setPage(1);
   }, [filter, items.length]);
+
+  /** Persist one holding under the signed-in uid + wallet. */
+  async function persistItem(item, token, walletAddr) {
+    if (!item?.cert) return;
+    await putMeta({
+      ...item,
+      wallet: walletAddr,
+      status: item.status || 'active',
+      qty: item.qty ?? 1,
+    }, { authToken: token });
+  }
+
+  /** Reload saved meta for a wallet (signed-in only). Guest stays local-only. */
+  async function loadWalletInventory(walletAddr) {
+    const addr = normalizeWallet(walletAddr);
+    if (!addr) {
+      setItems([]);
+      setBoundWallet('');
+      return;
+    }
+    if (!user) return;
+    setLoading(true);
+    setError(null);
+    try {
+      const token = await getToken();
+      if (!token) {
+        setItems([]);
+        return;
+      }
+      const metaRes = await fetchMeta({ authToken: token, wallet: addr });
+      setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+      setBoundWallet(addr);
+    } catch (err) {
+      setError(err?.message ?? t('inventory.loadFailed'));
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const onBoard = useMemo(() => {
     const keys = new Set();
@@ -162,59 +211,78 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   async function handleScan(e) {
     e.preventDefault();
+    const addr = normalizeWallet(wallet);
+    if (!addr) {
+      setError(t('inventory.walletInvalid'));
+      return;
+    }
     setBusy('scan');
     setError(null);
     try {
-      const res = await scanWallet(wallet.trim());
+      // Signed-in: merge previously saved costs for this wallet before / after chain scan.
+      let savedByCert = new Map();
+      if (user) {
+        try {
+          const token = await getToken();
+          if (token) {
+            const metaRes = await fetchMeta({ authToken: token, wallet: addr });
+            for (const row of metaRes?.items ?? []) {
+              if (row?.cert) savedByCert.set(String(row.cert), row);
+            }
+          }
+        } catch {
+          savedByCert = new Map();
+        }
+      }
+
+      const res = await scanWallet(addr);
       const holdings = res?.holdings ?? [];
       const mapped = holdings.map((h) => {
         const packCost = Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null;
+        const cert = h.serial || h.tokenId;
+        const prev = cert ? savedByCert.get(String(cert)) : null;
+        const cost = Number.isFinite(prev?.cost)
+          ? prev.cost
+          : packCost;
         return {
-          cert: h.serial || h.tokenId,
-          name: h.name,
-          setName: h.setName,
-          grade: h.grade,
-          imageUrl: h.imageUrl,
-          priceUsdCents: h.renaissFmv?.priceUsdCents ?? null,
-          href: h.renaissFmv?.href ?? null,
+          cert,
+          wallet: addr,
+          name: h.name ?? prev?.name ?? null,
+          setName: h.setName ?? prev?.setName ?? null,
+          grade: h.grade ?? prev?.grade ?? null,
+          imageUrl: h.imageUrl ?? prev?.imageUrl ?? null,
+          priceUsdCents: h.renaissFmv?.priceUsdCents ?? prev?.priceUsdCents ?? null,
+          href: h.renaissFmv?.href ?? prev?.href ?? null,
           onChainCostUsd: packCost,
-          costSource: h.costSource ?? null,
+          costSource: prev?.costSource === 'manual' ? 'manual' : (h.costSource ?? null),
           acquireType: h.acquireType ?? null,
           packPaymentTxHash: h.packPaymentTxHash ?? null,
-          cost: packCost,
-          status: 'active',
-          qty: 1,
+          cost,
+          listPrice: prev?.listPrice ?? null,
+          status: prev?.status || 'active',
+          qty: prev?.qty ?? 1,
+          notes: prev?.notes ?? (h.acquireType ? `acquire:${h.acquireType}` : null),
         };
       });
       setPage(1);
-      if (!user) {
-        setItems(mapped);
-        setCsvNote(
-          res?.packCostPrefillCount
-            ? t('inventory.scanOkPrefill', { prefill: res.packCostPrefillCount, total: mapped.length })
-            : t('inventory.scanOk', { total: mapped.length }),
-        );
-        return;
+      setBoundWallet(addr);
+      setItems(mapped);
+      setCsvNote(
+        res?.packCostPrefillCount
+          ? t('inventory.scanOkPrefill', { prefill: res.packCostPrefillCount, total: mapped.length })
+          : t('inventory.scanOk', { total: mapped.length }),
+      );
+
+      // Persist only when signed in — backend rows follow uid + wallet.
+      if (user) {
+        await withAuth(async (token) => {
+          for (const h of mapped) {
+            await persistItem(h, token, addr);
+          }
+        });
+      } else {
+        setCsvNote((prev) => `${prev || ''} ${t('inventory.scanGuestNote')}`.trim());
       }
-      await withAuth(async (token) => {
-        for (const h of mapped) {
-          if (!h.cert) continue;
-          await putMeta({
-            cert: h.cert,
-            name: h.name,
-            setName: h.setName,
-            grade: h.grade,
-            imageUrl: h.imageUrl,
-            priceUsdCents: h.priceUsdCents,
-            href: h.href,
-            cost: h.cost,
-            status: 'active',
-            qty: 1,
-            notes: h.acquireType ? `acquire:${h.acquireType}` : null,
-          }, { authToken: token });
-        }
-      });
-      await load();
     } catch (err) {
       setError(err?.message ?? t('inventory.scanFailed'));
     } finally {
@@ -224,6 +292,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   async function handleManualCert(e) {
     e.preventDefault();
+    if (!boundWallet) {
+      setError(t('inventory.needWalletFirst'));
+      return;
+    }
     setBusy('cert');
     setError(null);
     try {
@@ -236,6 +308,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       }
       const item = {
         cert: res.cert,
+        wallet: boundWallet,
         name: res.brief?.name ?? null,
         setName: res.brief?.setName ?? null,
         grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null,
@@ -250,8 +323,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         costSource: 'manual',
       };
       if (user) {
-        await withAuth((token) => putMeta(item, { authToken: token }));
-        await load();
+        await withAuth((token) => persistItem(item, token, boundWallet));
+        await loadWalletInventory(boundWallet);
       } else {
         setItems((prev) => {
           const rest = prev.filter((p) => p.cert !== item.cert);
@@ -269,16 +342,20 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   async function updateStatus(cert, status, extra = {}) {
     const current = items.find((i) => i.cert === cert || i.id === cert) || { cert };
-    const next = { ...current, cert: current.cert || cert, status, ...extra };
-    if (user) {
+    const next = {
+      ...current,
+      cert: current.cert || cert,
+      wallet: current.wallet || boundWallet || null,
+      status,
+      ...extra,
+    };
+    setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
+    if (user && boundWallet) {
       try {
-        await withAuth((token) => putMeta(next, { authToken: token }));
-        await load();
+        await withAuth((token) => persistItem(next, token, boundWallet));
       } catch (err) {
-      setError(err?.message ?? t('inventory.updateFailed'));
+        setError(err?.message ?? t('inventory.updateFailed'));
       }
-    } else {
-      setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
     }
   }
 
@@ -291,22 +368,27 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   function handleCsvFile(file) {
     if (!file) return;
+    if (!boundWallet) {
+      setError(t('inventory.needWalletFirst'));
+      return;
+    }
     const reader = new FileReader();
     reader.onload = async () => {
       const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? ''));
       setCsvNote(t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }));
       if (!accepted.length) return;
+      const withWallet = accepted.map((row) => ({ ...row, wallet: boundWallet }));
       if (user) {
         try {
-          await withAuth((token) => bulkMeta(accepted, { authToken: token }));
-          await load();
+          await withAuth((token) => bulkMeta(withWallet, { authToken: token }));
+          await loadWalletInventory(boundWallet);
         } catch (err) {
           setError(err?.message ?? t('inventory.csvFailed'));
         }
       } else {
         setItems((prev) => {
           const map = new Map(prev.map((p) => [p.cert, p]));
-          for (const row of accepted) map.set(row.cert, { ...map.get(row.cert), ...row });
+          for (const row of withWallet) map.set(row.cert, { ...map.get(row.cert), ...row });
           return [...map.values()];
         });
       }
@@ -334,6 +416,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             {t('inventory.subtitle')}
             {!user && t('inventory.subtitleGuest')}
           </p>
+          {boundWallet ? (
+            <p className="small" style={{ marginTop: '0.45rem' }}>
+              {t('inventory.boundWallet', { wallet: `${boundWallet.slice(0, 6)}…${boundWallet.slice(-4)}` })}
+              {user ? ` · ${t('inventory.boundSaved')}` : ` · ${t('inventory.boundLocal')}`}
+            </p>
+          ) : (
+            <p className="small" style={{ marginTop: '0.45rem' }}>{t('inventory.needWalletHint')}</p>
+          )}
         </div>
         {enriched.length > 0 && (
           <div className="hero-stats" aria-label="Portfolio snapshot">
@@ -426,10 +516,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <div>
             <h2 className="section-title">{t('inventory.yourInventory')}</h2>
             <p className="small">
-              {loading
-                ? t('common.loading')
-                : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length })}
-              {filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
+              {!boundWallet
+                ? t('inventory.emptyUntilWallet')
+                : (loading
+                  ? t('common.loading')
+                  : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length }))}
+              {boundWallet && filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
             </p>
           </div>
           <div className="filter-pills" role="tablist" aria-label="Filter holdings">
@@ -448,8 +540,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           </div>
         </div>
 
-        {enriched.length === 0 ? (
-          <div className="empty">{t('inventory.empty')}</div>
+        {!boundWallet || enriched.length === 0 ? (
+          <div className="empty">
+            {!boundWallet ? t('inventory.emptyUntilWallet') : t('inventory.empty')}
+          </div>
         ) : filtered.length === 0 ? (
           <div className="empty">{t('inventory.filterEmpty')}</div>
         ) : (

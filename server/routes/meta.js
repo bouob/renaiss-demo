@@ -2,12 +2,17 @@
  * GET/PUT /meta — uid-scoped inventory metadata
  * (cost / listPrice / qty / target / stop / status) under
  * hackathonMerchantInventory/{uid}/items/{cert}.
+ *
+ * Items are optionally wallet-bound (`wallet` lowercase 0x…).
+ * GET /meta?wallet=0x… returns only that wallet's rows (Inventory UI
+ * stays empty until a wallet is entered).
  */
 
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
+import { isValidAddressShape } from '../lib/walletGuard.js';
 
 const router = Router();
 const COLLECTION = 'hackathonMerchantInventory';
@@ -24,12 +29,20 @@ function sanitizeNumber(v) {
   return Number.isFinite(n) ? n : null;
 }
 
+function sanitizeWallet(v) {
+  const w = typeof v === 'string' ? v.trim() : '';
+  if (!isValidAddressShape(w)) return null;
+  return w.toLowerCase();
+}
+
 function sanitizeItem(body, cert) {
   const status = typeof body.status === 'string' && STATUSES.has(body.status)
     ? body.status
     : 'active';
+  const wallet = sanitizeWallet(body.wallet);
   return {
     cert,
+    wallet,
     cost: sanitizeNumber(body.cost),
     listPrice: sanitizeNumber(body.listPrice),
     qty: sanitizeNumber(body.qty) ?? 1,
@@ -52,14 +65,25 @@ router.get('/meta', requireAuth, async (req, res) => {
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable', items: [] });
     }
+    // Inventory must be wallet-scoped: without ?wallet= return empty (not full dump).
+    const walletFilter = sanitizeWallet(req.query?.wallet);
+    if (!walletFilter) {
+      return res.json({ items: [], uid: req.uid, wallet: null, reason: 'wallet_required' });
+    }
+
     const snap = await adminDb
       .collection(COLLECTION)
       .doc(req.uid)
       .collection('items')
       .get();
-    const items = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const items = snap.docs
+      .map((d) => ({ id: d.id, ...d.data() }))
+      .filter((row) => {
+        const w = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
+        return w === walletFilter;
+      });
     rememberHeldCerts(items.map((i) => i.cert || i.id));
-    return res.json({ items, uid: req.uid });
+    return res.json({ items, uid: req.uid, wallet: walletFilter });
   } catch (err) {
     console.warn(`[meta:get] ${err?.message ?? err}`);
     return res.status(500).json({ error: 'meta_read_failed', items: [] });
@@ -77,12 +101,16 @@ router.put('/meta', requireAuth, async (req, res) => {
     }
 
     const patch = sanitizeItem(req.body ?? {}, cert);
+    // Do not wipe an existing wallet with null when client omits it.
+    if (patch.wallet == null) delete patch.wallet;
     const ref = itemRef(req.uid, cert);
     const existing = await ref.get();
+    const prev = existing.exists ? existing.data() : {};
     const merged = {
-      ...(existing.exists ? existing.data() : {}),
+      ...prev,
       ...patch,
-      createdAt: existing.exists ? (existing.data().createdAt ?? patch.updatedAt) : patch.updatedAt,
+      wallet: patch.wallet ?? prev.wallet ?? null,
+      createdAt: existing.exists ? (prev.createdAt ?? patch.updatedAt) : patch.updatedAt,
     };
     await ref.set(merged, { merge: true });
     rememberHeldCert(cert);
