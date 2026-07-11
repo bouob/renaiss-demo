@@ -30,3 +30,16 @@ export function bulkMeta(items, { authToken } = {}) {
 export function fetchTicker(options = {}) {
   return getJson('/ticker', options);
 }
+
+/**
+ * Gemini merchant verdict for a held cert (lazy, auth required).
+ * @param {object} body
+ * @param {{ authToken: string }} options
+ */
+export function analyzeMerchantInsight(body, { authToken } = {}) {
+  return postJson('/insight/merchant', body, { authToken, timeoutMs: 60_000 });
+}
+
+export function fetchMerchantInsightUsage({ authToken } = {}) {
+  return getJson('/insight/merchant-usage', { authToken });
+}

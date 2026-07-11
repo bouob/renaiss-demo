@@ -15,6 +15,7 @@ import {
 export default function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(!isFirebaseConfigured);
+  const [authError, setAuthError] = useState(null);
 
   useEffect(() => {
     if (!auth) {
@@ -24,17 +25,29 @@ export default function App() {
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthReady(true);
+      if (u) setAuthError(null);
     });
   }, []);
 
   const getToken = useCallback(async () => getIdToken(), []);
+
+  const handleSignIn = useCallback(async () => {
+    setAuthError(null);
+    try {
+      await signInWithGoogle();
+    } catch (err) {
+      console.warn(err);
+      setAuthError(err?.message || 'Sign-in failed');
+    }
+  }, []);
 
   return (
     <Layout
       user={user}
       authReady={authReady}
       firebaseOk={isFirebaseConfigured}
-      onSignIn={() => signInWithGoogle().catch((err) => console.warn(err))}
+      authError={authError}
+      onSignIn={handleSignIn}
       onSignOut={() => signOutUser()}
     >
       <Routes>

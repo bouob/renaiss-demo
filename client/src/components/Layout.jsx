@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 
-export default function Layout({ children, user, onSignIn, onSignOut, authReady, firebaseOk }) {
+export default function Layout({ children, user, onSignIn, onSignOut, authReady, firebaseOk, authError }) {
   const { t } = useTranslation();
 
   return (
@@ -48,6 +48,11 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
           )}
         </nav>
       </header>
+      {authError && (
+        <div className="empty" style={{ color: 'var(--clear)', marginBottom: '0.75rem' }} role="alert">
+          {t('nav.signInFailed')}: {authError}
+        </div>
+      )}
       {children}
     </div>
   );

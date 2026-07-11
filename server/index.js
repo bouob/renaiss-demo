@@ -11,6 +11,7 @@ import relatedRouter from './routes/related.js';
 import scanRouter from './routes/scan.js';
 import metaRouter from './routes/meta.js';
 import tickerRouter from './routes/ticker.js';
+import insightRouter from './routes/insight.js';
 
 // Renaiss Merchant Copilot API — thin, synchronous Express app (no Cloud
 // Tasks / webhook / Privy / subscriptions; see PLAN.md §鎖定決策 + §架構).
@@ -55,6 +56,8 @@ router.use(relatedRouter);
 router.use(scanRouter);
 // uid-scoped meta (requireAuth inside the router)
 router.use(metaRouter);
+// Gemini merchant verdict (requireAuth + ownership + cache)
+router.use(insightRouter);
 
 app.use('/merchant/api', router);
 app.use('/api', router);

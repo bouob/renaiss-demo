@@ -1,11 +1,7 @@
 /**
- * GET/PUT /meta — uid-scoped inventory metadata
- * (cost / listPrice / qty / target / stop / status) under
+ * GET/PUT /meta — uid-scoped inventory metadata under
  * hackathonMerchantInventory/{uid}/items/{cert}.
- *
- * Items are optionally wallet-bound (`wallet` lowercase 0x…).
- * GET /meta?wallet=0x… returns only that wallet's rows (Inventory UI
- * stays empty until a wallet is entered).
+ * GET /meta?wallet=0x… is required (wallet-scoped inventory).
  */
 
 import { Router } from 'express';
@@ -15,9 +11,19 @@ import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js
 import { isValidAddressShape } from '../lib/walletGuard.js';
 
 const router = Router();
-const COLLECTION = 'hackathonMerchantInventory';
+export const COLLECTION = 'hackathonMerchantInventory';
 const CERT_SHAPE = /^[A-Za-z0-9._-]{3,64}$/;
 const STATUSES = new Set(['active', 'promoted', 'delisted', 'sold', 'hold', 'clear']);
+const ACQUIRE_TYPES = new Set(['PACK_PULL', 'MINT', 'TRANSFER', 'UNKNOWN', 'PACK_PAYMENT']);
+const COST_SOURCES = new Set([
+  'manual',
+  'pack_payment',
+  'pack_payment_split',
+  'pack_unmatched',
+  'secondary_transfer',
+  'unavailable',
+  'buy',
+]);
 
 function itemRef(uid, cert) {
   return adminDb.collection(COLLECTION).doc(uid).collection('items').doc(cert);
@@ -35,12 +41,24 @@ function sanitizeWallet(v) {
   return w.toLowerCase();
 }
 
+function sanitizeString(v, max) {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().slice(0, max);
+  return s || null;
+}
+
 function sanitizeItem(body, cert) {
   const status = typeof body.status === 'string' && STATUSES.has(body.status)
     ? body.status
     : 'active';
   const wallet = sanitizeWallet(body.wallet);
-  return {
+  const acquireType = typeof body.acquireType === 'string' && ACQUIRE_TYPES.has(body.acquireType)
+    ? body.acquireType
+    : null;
+  const costSource = typeof body.costSource === 'string' && COST_SOURCES.has(body.costSource)
+    ? body.costSource
+    : null;
+  const patch = {
     cert,
     wallet,
     cost: sanitizeNumber(body.cost),
@@ -49,15 +67,43 @@ function sanitizeItem(body, cert) {
     target: sanitizeNumber(body.target),
     stop: sanitizeNumber(body.stop),
     status,
-    name: typeof body.name === 'string' ? body.name.slice(0, 200) : null,
-    setName: typeof body.setName === 'string' ? body.setName.slice(0, 200) : null,
-    grade: typeof body.grade === 'string' ? body.grade.slice(0, 40) : null,
-    imageUrl: typeof body.imageUrl === 'string' ? body.imageUrl.slice(0, 500) : null,
+    name: sanitizeString(body.name, 200),
+    setName: sanitizeString(body.setName, 200),
+    grade: sanitizeString(body.grade, 40),
+    imageUrl: sanitizeString(body.imageUrl, 500),
     priceUsdCents: sanitizeNumber(body.priceUsdCents),
-    href: typeof body.href === 'string' ? body.href.slice(0, 300) : null,
-    notes: typeof body.notes === 'string' ? body.notes.slice(0, 1000) : null,
+    href: sanitizeString(body.href, 300),
+    notes: sanitizeString(body.notes, 1000),
+    acquireType,
+    costSource,
+    onChainCostUsd: sanitizeNumber(body.onChainCostUsd),
+    packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
     updatedAt: new Date().toISOString(),
   };
+  // Drop null optional pack fields so merge doesn't wipe prior values when omitted.
+  if (patch.acquireType == null) delete patch.acquireType;
+  if (patch.costSource == null) delete patch.costSource;
+  if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;
+  if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
+  if (patch.wallet == null) delete patch.wallet;
+  return patch;
+}
+
+/** Whether uid owns cert under optional wallet filter (for insight ownership gate). */
+export async function userOwnsCert(uid, cert, wallet = null) {
+  if (!adminDb || !uid || !CERT_SHAPE.test(String(cert || ''))) return false;
+  const snap = await itemRef(uid, String(cert).trim()).get();
+  if (!snap.exists) return false;
+  const data = snap.data() || {};
+  if (data.status === 'sold' || data.status === 'delisted') {
+    // still "owned" for historical AI? plan says inventory certs — allow active-ish
+  }
+  if (wallet) {
+    const w = sanitizeWallet(wallet);
+    const rowW = typeof data.wallet === 'string' ? data.wallet.toLowerCase() : '';
+    if (w && rowW && rowW !== w) return false;
+  }
+  return true;
 }
 
 router.get('/meta', requireAuth, async (req, res) => {
@@ -65,7 +111,6 @@ router.get('/meta', requireAuth, async (req, res) => {
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable', items: [] });
     }
-    // Inventory must be wallet-scoped: without ?wallet= return empty (not full dump).
     const walletFilter = sanitizeWallet(req.query?.wallet);
     if (!walletFilter) {
       return res.json({ items: [], uid: req.uid, wallet: null, reason: 'wallet_required' });
@@ -101,8 +146,6 @@ router.put('/meta', requireAuth, async (req, res) => {
     }
 
     const patch = sanitizeItem(req.body ?? {}, cert);
-    // Do not wipe an existing wallet with null when client omits it.
-    if (patch.wallet == null) delete patch.wallet;
     const ref = itemRef(req.uid, cert);
     const existing = await ref.get();
     const prev = existing.exists ? existing.data() : {};
@@ -121,7 +164,6 @@ router.put('/meta', requireAuth, async (req, res) => {
   }
 });
 
-/** Bulk CSV-style import: { items: [{ cert, ... }] } */
 router.post('/meta/bulk', requireAuth, async (req, res) => {
   try {
     if (!adminDb) {
@@ -137,6 +179,7 @@ router.post('/meta/bulk', requireAuth, async (req, res) => {
 
     const accepted = [];
     const rejected = [];
+    // Firestore batch limit 500; we cap at 200 items.
     const batch = adminDb.batch();
     let batchCount = 0;
 
@@ -148,6 +191,7 @@ router.post('/meta/bulk', requireAuth, async (req, res) => {
       }
       const patch = sanitizeItem(row, cert);
       const ref = itemRef(req.uid, cert);
+      // merge:true preserves fields omitted from patch; stamp createdAt only when new.
       batch.set(ref, { ...patch, createdAt: patch.updatedAt }, { merge: true });
       batchCount += 1;
       accepted.push(cert);

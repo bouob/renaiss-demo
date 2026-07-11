@@ -13,6 +13,7 @@ import { parseInventoryCsv } from '../lib/csvInventory.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 
 const PAGE_SIZE = 12;
+const LAST_WALLET_KEY = 'merchant_last_wallet';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
@@ -37,7 +38,13 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [movers, setMovers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [wallet, setWallet] = useState('');
+  const [wallet, setWallet] = useState(() => {
+    try {
+      return normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
+    } catch {
+      return '';
+    }
+  });
   /** Last wallet that successfully loaded inventory (empty = no data shown). */
   const [boundWallet, setBoundWallet] = useState('');
   const [manualCert, setManualCert] = useState('');
@@ -46,6 +53,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
+
+  function rememberWallet(addr) {
+    const w = normalizeWallet(addr);
+    if (!w) return;
+    try {
+      localStorage.setItem(LAST_WALLET_KEY, w);
+    } catch { /* ignore */ }
+  }
 
   // Market movers only — never auto-load inventory without a wallet.
   const loadMovers = useCallback(async () => {
@@ -89,17 +104,36 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }, { authToken: token });
   }
 
-  /** Reload saved meta for a wallet (signed-in only). Guest stays local-only. */
-  async function loadWalletInventory(walletAddr) {
+  async function persistBulk(list, token, walletAddr) {
+    const rows = list
+      .filter((h) => h?.cert)
+      .map((h) => ({
+        ...h,
+        wallet: walletAddr,
+        status: h.status || 'active',
+        qty: h.qty ?? 1,
+      }));
+    if (!rows.length) return;
+    // Chunk by 100 for safety
+    for (let i = 0; i < rows.length; i += 100) {
+      await bulkMeta(rows.slice(i, i + 100), { authToken: token });
+    }
+  }
+
+  /** Load saved meta only (no chain scan). Signed-in only. */
+  async function loadWalletInventory(walletAddr, { quiet } = {}) {
     const addr = normalizeWallet(walletAddr);
     if (!addr) {
       setItems([]);
       setBoundWallet('');
       return;
     }
-    if (!user) return;
+    if (!user) {
+      setError(t('inventory.needSignInLoad'));
+      return;
+    }
     setLoading(true);
-    setError(null);
+    if (!quiet) setError(null);
     try {
       const token = await getToken();
       if (!token) {
@@ -107,13 +141,34 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         return;
       }
       const metaRes = await fetchMeta({ authToken: token, wallet: addr });
-      setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+      const list = Array.isArray(metaRes?.items) ? metaRes.items : [];
+      setItems(list);
       setBoundWallet(addr);
+      setWallet(addr);
+      rememberWallet(addr);
+      if (!quiet) {
+        setCsvNote(t('inventory.loadOk', { total: list.length }));
+      }
     } catch (err) {
       setError(err?.message ?? t('inventory.loadFailed'));
       setItems([]);
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function handleLoadSaved(e) {
+    e?.preventDefault?.();
+    const addr = normalizeWallet(wallet);
+    if (!addr) {
+      setError(t('inventory.walletInvalid'));
+      return;
+    }
+    setBusy('load');
+    try {
+      await loadWalletInventory(addr);
+    } finally {
+      setBusy(null);
     }
   }
 
@@ -273,12 +328,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           : t('inventory.scanOk', { total: mapped.length }),
       );
 
+      rememberWallet(addr);
+
       // Persist only when signed in — backend rows follow uid + wallet.
       if (user) {
         await withAuth(async (token) => {
-          for (const h of mapped) {
-            await persistItem(h, token, addr);
-          }
+          await persistBulk(mapped, token, addr);
         });
       } else {
         setCsvNote((prev) => `${prev || ''} ${t('inventory.scanGuestNote')}`.trim());
@@ -364,6 +419,28 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       cost: cost === '' || cost == null ? null : Number(cost),
       costSource: 'manual',
     });
+  }
+
+  /** Patch detail fields (cost / listPrice / notes / status). */
+  async function saveDetails(cert, patch = {}) {
+    const current = items.find((i) => (i.cert || i.id) === cert) || { cert };
+    const next = {
+      ...current,
+      cert: current.cert || cert,
+      wallet: current.wallet || boundWallet || null,
+      ...patch,
+    };
+    if (patch.cost !== undefined && patch.costSource == null) {
+      next.costSource = 'manual';
+    }
+    setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
+    if (user && boundWallet) {
+      try {
+        await withAuth((token) => persistItem(next, token, boundWallet));
+      } catch (err) {
+        setError(err?.message ?? t('inventory.updateFailed'));
+      }
+    }
   }
 
   function handleCsvFile(file) {
@@ -454,18 +531,28 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       <section className="panel-grid">
         <form className="glass-card" onSubmit={handleScan}>
           <p className="label">{t('inventory.walletScan')}</p>
-          <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
+          <div className="form-row" style={{ gridTemplateColumns: '1fr auto auto', marginBottom: '0.5rem' }}>
             <input
               className="input"
               placeholder={t('inventory.walletPlaceholder')}
               value={wallet}
               onChange={(e) => setWallet(e.target.value)}
             />
+            <button
+              className="btn btn-ghost btn-sm"
+              type="button"
+              disabled={busy === 'load' || !wallet.trim() || !user}
+              onClick={handleLoadSaved}
+              title={!user ? t('inventory.needSignInLoad') : t('inventory.loadSavedHint')}
+            >
+              {busy === 'load' ? t('common.loading') : t('inventory.loadSaved')}
+            </button>
             <button className="btn btn-primary" type="submit" disabled={busy === 'scan' || !wallet.trim()}>
-              {busy === 'scan' ? t('inventory.scanning') : t('inventory.scan')}
+              {busy === 'scan' ? t('inventory.scanning') : t('inventory.rescan')}
             </button>
           </div>
           <p className="small">{t('inventory.walletHint')}</p>
+          <p className="small">{t('inventory.loadVsScanHint')}</p>
         </form>
 
         <form className="glass-card" onSubmit={handleManualCert}>
@@ -623,8 +710,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           item={selected}
           user={user}
           getToken={getToken}
+          wallet={boundWallet}
           onClose={() => setSelectedCert(null)}
           onSaveCost={saveCost}
+          onSaveDetails={saveDetails}
           onUpdateStatus={updateStatus}
         />
       )}

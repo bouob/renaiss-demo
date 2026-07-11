@@ -11,7 +11,32 @@
     "dashboard": "Dashboard",
     "inventory": "Inventory",
     "signIn": "Sign in",
-    "signOut": "Sign out"
+    "signOut": "Sign out",
+    "signInFailed": "Sign-in failed"
+  },
+  "status": {
+    "active": "Active",
+    "promoted": "Promoted",
+    "delisted": "Delisted",
+    "sold": "Sold",
+    "hold": "Hold",
+    "clear": "Clear"
+  },
+  "acquire": {
+    "PACK_PULL": "Pack pull",
+    "MINT": "Mint",
+    "TRANSFER": "Transfer",
+    "UNKNOWN": "Unknown",
+    "PACK_PAYMENT": "Pack payment"
+  },
+  "costSource": {
+    "manual": "Manual cost",
+    "pack_payment": "Pack payment",
+    "pack_payment_split": "Pack split",
+    "pack_unmatched": "Pack unmatched",
+    "secondary_transfer": "Secondary",
+    "unavailable": "No cost",
+    "buy": "On-chain buy"
   },
   "common": {
     "loading": "Loading…",
@@ -84,12 +109,18 @@
     "walletScan": "Wallet scan",
     "walletPlaceholder": "0x…",
     "scan": "Scan",
+    "rescan": "Rescan chain",
     "scanning": "Scanning…",
-    "walletHint": "Inventory stays empty until you scan. Pack pulls get cost prefilled · IP rate-limited",
+    "loadSaved": "Load saved",
+    "loadSavedHint": "Load Firestore inventory for this wallet (no chain scan)",
+    "loadVsScanHint": "Load saved = DB only. Rescan = on-chain walk + pack cost prefill + merge.",
+    "loadOk": "Loaded {{total}} saved cards",
+    "needSignInLoad": "Sign in to load saved inventory from the backend.",
+    "walletHint": "Inventory stays empty until you load or scan. Pack pulls get cost prefilled · IP rate-limited",
     "walletInvalid": "Enter a valid 0x wallet address (40 hex chars).",
     "needWalletFirst": "Scan a wallet first — inventory is wallet-scoped.",
-    "needWalletHint": "Default: no cards. Scan a wallet to load holdings.",
-    "emptyUntilWallet": "No wallet bound yet — scan an address to load inventory.",
+    "needWalletHint": "Default: no cards. Load saved or rescan a wallet.",
+    "emptyUntilWallet": "No wallet bound yet — load saved or rescan an address.",
     "boundWallet": "Bound wallet {{wallet}}",
     "boundSaved": "saved to account",
     "boundLocal": "local preview only",
@@ -140,26 +171,28 @@
     "noSeries": "No series for this cert yet.",
     "return30d": "30d return",
     "costPlaceholder": "cost USD",
+    "listPrice": "List price",
+    "listPricePlaceholder": "Ask USD",
+    "notes": "Notes",
+    "notesPlaceholder": "Optional merchant notes",
+    "active": "Active",
     "promote": "Promote",
     "delist": "Delist",
     "sold": "Sold",
     "renaissIndex": "Renaiss Index ↗",
     "related": "Related ±1",
+    "aiTitle": "AI merchant advice",
+    "aiHint": "Personalized explanation of promote/hold/clear. Cached 24h after first generate.",
+    "aiLoad": "Generate advice",
+    "aiLoading": "Generating…",
+    "aiNeedSignIn": "Sign in to use AI advice (ownership-gated).",
+    "aiFailed": "AI advice failed",
+    "aiFromCache": "From cache",
+    "aiFresh": "Freshly generated",
+    "aiRefresh": "Regenerate (uses daily quota)",
     "adjacent": "Adjacent certs",
     "gated": "Gated — not in scan allowlist.",
     "noNeighbors": "No found neighbors.",
     "costSource": "cost source"
-  },
-  "status": {
-    "active": "active",
-    "promoted": "promoted",
-    "delisted": "delisted",
-    "sold": "sold"
-  },
-  "acquire": {
-    "PACK_PULL": "PACK_PULL",
-    "MINT": "MINT",
-    "TRANSFER": "TRANSFER",
-    "UNKNOWN": "UNKNOWN"
   }
 }

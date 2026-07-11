@@ -11,7 +11,32 @@
     "dashboard": "ダッシュボード",
     "inventory": "在庫",
     "signIn": "ログイン",
-    "signOut": "ログアウト"
+    "signOut": "ログアウト",
+    "signInFailed": "ログイン失敗"
+  },
+  "status": {
+    "active": "保有中",
+    "promoted": "プッシュ中",
+    "delisted": "非掲載",
+    "sold": "売却済",
+    "hold": "ホールド",
+    "clear": "クリア"
+  },
+  "acquire": {
+    "PACK_PULL": "パック開封",
+    "MINT": "ミント",
+    "TRANSFER": "転送",
+    "UNKNOWN": "不明",
+    "PACK_PAYMENT": "パック決済"
+  },
+  "costSource": {
+    "manual": "手動コスト",
+    "pack_payment": "パック決済",
+    "pack_payment_split": "パック按分",
+    "pack_unmatched": "未マッチ",
+    "secondary_transfer": "二次流通",
+    "unavailable": "コストなし",
+    "buy": "オンチェーン購入"
   },
   "common": {
     "loading": "読み込み中…",
@@ -84,12 +109,18 @@
     "walletScan": "ウォレットスキャン",
     "walletPlaceholder": "0x…",
     "scan": "スキャン",
+    "rescan": "チェーン再スキャン",
     "scanning": "スキャン中…",
-    "walletHint": "スキャン前は在庫は空。パック開封はコスト自動入力 · IP制限",
+    "loadSaved": "保存を読込",
+    "loadSavedHint": "Firestore 在庫のみ（チェーンなし）",
+    "loadVsScanHint": "保存読込＝DBのみ。再スキャン＝オンチェーン + パックコスト + マージ。",
+    "loadOk": "保存 {{total}} 枚を読込",
+    "needSignInLoad": "保存在庫の読込にはログインが必要です。",
+    "walletHint": "読込／スキャン前は在庫は空。パック開封はコスト自動入力 · IP制限",
     "walletInvalid": "有効な 0x ウォレットアドレス（40 hex）を入力してください。",
     "needWalletFirst": "先にウォレットをスキャン — 在庫はウォレット単位です。",
-    "needWalletHint": "既定はデータなし。スキャン後に保有を読み込みます。",
-    "emptyUntilWallet": "ウォレット未バインド — アドレスをスキャンして在庫を読み込んでください。",
+    "needWalletHint": "既定はデータなし。保存読込または再スキャン。",
+    "emptyUntilWallet": "ウォレット未バインド — 保存読込または再スキャンしてください。",
     "boundWallet": "バインド {{wallet}}",
     "boundSaved": "保存済み",
     "boundLocal": "ローカルのみ",
@@ -140,26 +171,28 @@
     "noSeries": "この番号の系列はまだありません。",
     "return30d": "30日リターン",
     "costPlaceholder": "コスト USD",
+    "listPrice": "売値",
+    "listPricePlaceholder": "リスト USD",
+    "notes": "メモ",
+    "notesPlaceholder": "任意メモ",
+    "active": "保有中",
     "promote": "プッシュ",
     "delist": "出品停止",
     "sold": "売却済",
     "renaissIndex": "Renaiss Index ↗",
     "related": "隣接 ±1",
+    "aiTitle": "AI マーチャント助言",
+    "aiHint": "プッシュ／ホールド／クリアの個人化説明。初回生成後 24h キャッシュ。",
+    "aiLoad": "助言を生成",
+    "aiLoading": "生成中…",
+    "aiNeedSignIn": "AI にはログインが必要（保有証のみ）。",
+    "aiFailed": "AI 失敗",
+    "aiFromCache": "キャッシュ",
+    "aiFresh": "新規生成",
+    "aiRefresh": "再生成（日次枠を消費）",
     "adjacent": "隣接番号",
     "gated": "ゲート済み — スキャン許可リスト外。",
     "noNeighbors": "隣接カードなし。",
     "costSource": "コスト源"
-  },
-  "status": {
-    "active": "保有中",
-    "promoted": "プッシュ中",
-    "delisted": "出品停止",
-    "sold": "売却済"
-  },
-  "acquire": {
-    "PACK_PULL": "パック開封",
-    "MINT": "ミント",
-    "TRANSFER": "転送",
-    "UNKNOWN": "不明"
   }
 }

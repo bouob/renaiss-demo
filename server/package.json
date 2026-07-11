@@ -12,7 +12,7 @@
     "start": "node index.js",
     "dev": "cross-env IS_LOCAL_DEV=true node index.js",
     "test": "echo \"(no server tests yet)\" && exit 0",
-    "check": "node --check index.js"
+    "check": "node --check index.js && node --check routes/meta.js && node --check routes/insight.js && node --check services/geminiMerchantService.js && node --check services/geminiMerchantCache.js"
   },
   "dependencies": {
     "cors": "^2.8.5",

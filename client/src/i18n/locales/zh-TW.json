@@ -11,7 +11,32 @@
     "dashboard": "儀表板",
     "inventory": "庫存",
     "signIn": "登入",
-    "signOut": "登出"
+    "signOut": "登出",
+    "signInFailed": "登入失敗"
+  },
+  "status": {
+    "active": "持有中",
+    "promoted": "推廣中",
+    "delisted": "已下架",
+    "sold": "已售出",
+    "hold": "持有",
+    "clear": "出清"
+  },
+  "acquire": {
+    "PACK_PULL": "抽包",
+    "MINT": "鑄造",
+    "TRANSFER": "轉入",
+    "UNKNOWN": "未知",
+    "PACK_PAYMENT": "卡包付款"
+  },
+  "costSource": {
+    "manual": "手動成本",
+    "pack_payment": "卡包付款",
+    "pack_payment_split": "卡包均分",
+    "pack_unmatched": "卡包未對上",
+    "secondary_transfer": "二級轉入",
+    "unavailable": "無成本",
+    "buy": "鏈上買入"
   },
   "common": {
     "loading": "載入中…",
@@ -84,12 +109,18 @@
     "walletScan": "錢包掃描",
     "walletPlaceholder": "0x…",
     "scan": "掃描",
+    "rescan": "重掃鏈上",
     "scanning": "掃描中…",
-    "walletHint": "未掃描前庫存為空。抽包卡會預填成本 · IP 限流",
+    "loadSaved": "載入已存",
+    "loadSavedHint": "只讀後台庫存（不掃鏈）",
+    "loadVsScanHint": "載入已存＝只讀 DB。重掃鏈上＝鏈上 walk + 抽包成本預填 + 合併。",
+    "loadOk": "已載入 {{total}} 張已存卡",
+    "needSignInLoad": "請先登入才能從後台載入庫存。",
+    "walletHint": "未載入／掃描前庫存為空。抽包卡會預填成本 · IP 限流",
     "walletInvalid": "請輸入有效的 0x 錢包地址（40 位 hex）。",
     "needWalletFirst": "請先掃描錢包 — 庫存依錢包綁定。",
-    "needWalletHint": "預設無資料。掃描錢包後才載入持倉。",
-    "emptyUntilWallet": "尚未綁定錢包 — 請掃描地址以載入庫存。",
+    "needWalletHint": "預設無資料。可載入已存或重掃錢包。",
+    "emptyUntilWallet": "尚未綁定錢包 — 請載入已存或重掃地址。",
     "boundWallet": "已綁定 {{wallet}}",
     "boundSaved": "已存後台",
     "boundLocal": "僅本機預覽",
@@ -140,26 +171,28 @@
     "noSeries": "此序號尚無序列資料。",
     "return30d": "30 日報酬",
     "costPlaceholder": "成本 USD",
+    "listPrice": "標價",
+    "listPricePlaceholder": "掛單 USD",
+    "notes": "備註",
+    "notesPlaceholder": "商家備註（選填）",
+    "active": "持有中",
     "promote": "推廣",
     "delist": "下架",
     "sold": "售出",
     "renaissIndex": "Renaiss Index ↗",
     "related": "相鄰 ±1",
+    "aiTitle": "AI 商家建議",
+    "aiHint": "依推廣／持有／出清決策產生個人化說明。首次產生後快取 24 小時。",
+    "aiLoad": "產生建議",
+    "aiLoading": "產生中…",
+    "aiNeedSignIn": "請登入使用 AI（需為你的庫存卡）。",
+    "aiFailed": "AI 建議失敗",
+    "aiFromCache": "來自快取",
+    "aiFresh": "剛產生",
+    "aiRefresh": "重新產生（消耗每日額度）",
     "adjacent": "相鄰序號",
     "gated": "已閘道 — 不在掃描允許清單。",
     "noNeighbors": "找不到相鄰卡。",
     "costSource": "成本來源"
-  },
-  "status": {
-    "active": "持有中",
-    "promoted": "推廣中",
-    "delisted": "已下架",
-    "sold": "已售出"
-  },
-  "acquire": {
-    "PACK_PULL": "抽包",
-    "MINT": "鑄造",
-    "TRANSFER": "轉入",
-    "UNKNOWN": "未知"
   }
 }

@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Sparkline from './Sparkline.jsx';
-import { fetchCard, fetchRelated } from '../lib/inventoryApi.js';
+import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 
 function formatUsd(n) {
@@ -9,24 +9,21 @@ function formatUsd(n) {
   return `$${n.toFixed(2)}`;
 }
 
-function formatCents(c) {
-  if (!Number.isFinite(c)) return '—';
-  return formatUsd(c / 100);
-}
-
 /**
- * Full-screen-ish detail for one inventory card — large art, 30d series,
- * cost/PnL, actions. Pattern loosely mirrors Dokipoki card drawer density.
+ * Inventory card detail — cost/pricing/notes/status + lazy AI verdict.
+ * Mirrors Dokipoki portfolio edit density (simplified).
  */
 export default function HoldingDetailModal({
   item,
   onClose,
   onSaveCost,
+  onSaveDetails,
   onUpdateStatus,
   getToken,
   user,
+  wallet,
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const [series, setSeries] = useState(item?.series30d ?? []);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [returnPct, setReturnPct] = useState(item?.returnPct30d ?? null);
@@ -35,6 +32,14 @@ export default function HoldingDetailModal({
   const [costDraft, setCostDraft] = useState(
     Number.isFinite(item?.cost) ? String(item.cost) : '',
   );
+  const [listDraft, setListDraft] = useState(
+    Number.isFinite(item?.listPrice) ? String(item.listPrice)
+      : (Number.isFinite(item?.suggested) ? String(item.suggested.toFixed(2)) : ''),
+  );
+  const [notesDraft, setNotesDraft] = useState(item?.notes || '');
+  const [ai, setAi] = useState(null);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiError, setAiError] = useState(null);
 
   const cert = item?.cert || item?.id;
   const indexUrl = resolveIndexUrl(item?.href);
@@ -44,14 +49,20 @@ export default function HoldingDetailModal({
   useEffect(() => {
     if (!item) return undefined;
     setCostDraft(Number.isFinite(item.cost) ? String(item.cost) : '');
+    setListDraft(
+      Number.isFinite(item.listPrice) ? String(item.listPrice)
+        : (Number.isFinite(item.suggested) ? String(Number(item.suggested).toFixed(2)) : ''),
+    );
+    setNotesDraft(item.notes || '');
     setSeries(Array.isArray(item.series30d) ? item.series30d : []);
     setReturnPct(item.returnPct30d ?? null);
     setRelated(null);
+    setAi(null);
+    setAiError(null);
 
     let cancelled = false;
     (async () => {
       if (!cert || cert.length < 3) return;
-      // Always refresh series when opening detail
       setSeriesLoading(true);
       try {
         const res = await fetchCard(cert, { series: true });
@@ -91,6 +102,62 @@ export default function HoldingDetailModal({
     }
   }
 
+  function saveAll() {
+    const cost = costDraft === '' ? null : Number(costDraft);
+    const listPrice = listDraft === '' ? null : Number(listDraft);
+    if (onSaveDetails) {
+      onSaveDetails(cert, {
+        cost: Number.isFinite(cost) ? cost : null,
+        listPrice: Number.isFinite(listPrice) ? listPrice : null,
+        notes: notesDraft || null,
+        costSource: Number.isFinite(cost) ? 'manual' : item.costSource,
+        status: item.status || 'active',
+      });
+    } else {
+      onSaveCost?.(cert, costDraft);
+    }
+  }
+
+  async function loadAi() {
+    if (!user) {
+      setAiError(t('detail.aiNeedSignIn'));
+      return;
+    }
+    setAiBusy(true);
+    setAiError(null);
+    try {
+      const token = await getToken();
+      if (!token) throw new Error('Not signed in');
+      const res = await analyzeMerchantInsight({
+        cert,
+        wallet: wallet || item.wallet || null,
+        name: item.name,
+        setName: item.setName,
+        grade: item.grade,
+        locale: i18n.language === 'zh-TW' ? 'zh-TW' : (i18n.language === 'ja' ? 'ja' : 'en'),
+        merchantContext: {
+          decision: item.decision || 'hold',
+          alphaPct30d: item.alphaPct30d ?? null,
+          thinMarketData: Boolean(item.mover?.thinMarketData),
+          liquidityScore: item.mover?.liquidityScore ?? null,
+          renaissFmv: {
+            priceUsdCents: item.priceUsdCents ?? null,
+            confidence: item.mover?.confidence ?? null,
+          },
+        },
+      }, { authToken: token });
+      setAi(res);
+    } catch (err) {
+      setAiError(err?.message || t('detail.aiFailed'));
+    } finally {
+      setAiBusy(false);
+    }
+  }
+
+  const packTx = item.packPaymentTxHash
+    ? `${String(item.packPaymentTxHash).slice(0, 8)}…${String(item.packPaymentTxHash).slice(-4)}`
+    : null;
+
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
       <div
@@ -127,6 +194,9 @@ export default function HoldingDetailModal({
               {item.acquireType && (
                 <span className="chip">{t(`acquire.${item.acquireType}`, { defaultValue: item.acquireType })}</span>
               )}
+              {item.costSource && (
+                <span className="chip">{t(`costSource.${item.costSource}`, { defaultValue: item.costSource })}</span>
+              )}
             </div>
 
             <div className="stat-grid">
@@ -155,8 +225,8 @@ export default function HoldingDetailModal({
 
             <p className="small">
               {t('common.cert')} <code>{cert}</code>
-              {item.costSource ? ` · ${t('detail.costSource')}: ${item.costSource}` : ''}
               {item.setName ? ` · ${item.setName}` : ''}
+              {packTx ? ` · pack tx ${packTx}` : ''}
             </p>
 
             <div>
@@ -179,25 +249,48 @@ export default function HoldingDetailModal({
               )}
             </div>
 
-            <div className="form-row" style={{ gridTemplateColumns: '1fr auto', marginBottom: 0 }}>
-              <input
-                className="input"
-                type="number"
-                step="0.01"
-                placeholder={t('detail.costPlaceholder')}
-                value={costDraft}
-                onChange={(e) => setCostDraft(e.target.value)}
-              />
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => onSaveCost?.(cert, costDraft)}
-              >
-                {t('common.saveCost')}
-              </button>
+            <div className="form-row" style={{ marginBottom: 0 }}>
+              <div>
+                <p className="label">{t('detail.cost')}</p>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  placeholder={t('detail.costPlaceholder')}
+                  value={costDraft}
+                  onChange={(e) => setCostDraft(e.target.value)}
+                />
+              </div>
+              <div>
+                <p className="label">{t('detail.listPrice')}</p>
+                <input
+                  className="input"
+                  type="number"
+                  step="0.01"
+                  placeholder={t('detail.listPricePlaceholder')}
+                  value={listDraft}
+                  onChange={(e) => setListDraft(e.target.value)}
+                />
+              </div>
             </div>
+            <div>
+              <p className="label">{t('detail.notes')}</p>
+              <textarea
+                className="input"
+                rows={2}
+                placeholder={t('detail.notesPlaceholder')}
+                value={notesDraft}
+                onChange={(e) => setNotesDraft(e.target.value)}
+              />
+            </div>
+            <button type="button" className="btn btn-primary btn-sm" onClick={saveAll}>
+              {t('common.save')}
+            </button>
 
             <div className="actions">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onUpdateStatus?.(cert, 'active')}>
+                {t('detail.active')}
+              </button>
               <button type="button" className="btn btn-primary btn-sm" onClick={() => onUpdateStatus?.(cert, 'promoted')}>
                 {t('detail.promote')}
               </button>
@@ -221,29 +314,60 @@ export default function HoldingDetailModal({
               </button>
             </div>
 
+            <div className="glass-card" style={{ padding: '0.85rem' }}>
+              <p className="label" style={{ marginBottom: '0.4rem' }}>{t('detail.aiTitle')}</p>
+              <p className="small" style={{ marginBottom: '0.5rem' }}>{t('detail.aiHint')}</p>
+              {!ai && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  disabled={aiBusy || !user}
+                  onClick={loadAi}
+                >
+                  {aiBusy ? t('detail.aiLoading') : t('detail.aiLoad')}
+                </button>
+              )}
+              {aiError && <p className="small" style={{ color: 'var(--clear)' }}>{aiError}</p>}
+              {ai?.content && (
+                <div className="stack" style={{ gap: '0.45rem', marginTop: '0.5rem' }}>
+                  <p style={{ margin: 0, fontWeight: 650 }}>{ai.content.verdict}</p>
+                  <pre className="small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>
+                    {ai.content.rationale}
+                  </pre>
+                  {Array.isArray(ai.content.caveats) && ai.content.caveats.length > 0 && (
+                    <ul className="small" style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                      {ai.content.caveats.map((c) => <li key={c}>{c}</li>)}
+                    </ul>
+                  )}
+                  <p className="small">
+                    {ai.fromCache ? t('detail.aiFromCache') : t('detail.aiFresh')}
+                    {ai.usage ? ` · ${ai.usage.count}/${ai.usage.limit}` : ''}
+                  </p>
+                  {ai.fromCache && (
+                    <button type="button" className="btn btn-ghost btn-sm" disabled={aiBusy} onClick={loadAi}>
+                      {t('detail.aiRefresh')}
+                    </button>
+                  )}
+                </div>
+              )}
+            </div>
+
             {related && (
               <div>
                 <p className="label">{t('detail.adjacent')}</p>
                 {related.gated && related.reason === 'not_held' && (
                   <div className="empty">{t('detail.gated')}</div>
                 )}
-                {related.neighbors?.length > 0 ? (
-                  <ul className="list">
-                    {related.neighbors.map((n) => (
-                      <li key={n.cert}>
-                        <div className="list-item list-item-static" style={{ gridTemplateColumns: '1fr auto' }}>
-                          <div>
-                            <strong>{n.name || n.cert}</strong>
-                            <div className="small">{n.gradeLabel} · Δ{n.delta} · {formatCents(n.priceUsdCents)}</div>
-                          </div>
-                          <span className="chip">{n.cert}</span>
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                ) : (
-                  !related.gated && <div className="empty">{t('detail.noNeighbors')}</div>
+                {!related.gated && Array.isArray(related.neighbors) && related.neighbors.length === 0 && (
+                  <div className="empty">{t('detail.noNeighbors')}</div>
                 )}
+                <ul className="list list-compact">
+                  {(related.neighbors || []).map((n) => (
+                    <li key={n.cert || n.href}>
+                      <span className="small">{n.cert || n.name}</span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             )}
           </div>
