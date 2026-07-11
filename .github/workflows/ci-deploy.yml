@@ -48,19 +48,11 @@ jobs:
         working-directory: server
         run: npm ci
 
-      - name: Syntax-check server
+      - name: Syntax-check + unit tests (server)
         working-directory: server
         run: |
-          node --check index.js
-          node --check routes/wall.js
-          node --check routes/movers.js
-          node --check routes/card.js
-          node --check routes/related.js
-          node --check routes/scan.js
-          node --check routes/meta.js
-          node --check routes/ticker.js
-          node --check routes/sales.js
-          node --check routes/insight.js
+          npm run check
+          npm test
 
       - name: Install client
         working-directory: client
@@ -273,30 +265,63 @@ jobs:
           echo "Deploying LIVE hosting to DEFAULT site project ${{ steps.sa.outputs.project_id }}"
           firebase deploy --only hosting --project "${{ steps.sa.outputs.project_id }}" --non-interactive
 
+      # merchantApi MUST deploy from renaiss-demo alone (no Dokipoki dependency).
+      # Failure here fails the workflow — hosting-only green is not enough.
       - name: Deploy Cloud Function merchantApi
         id: fn
-        continue-on-error: true
         env:
           GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+          RENAISS_INDEX_API_KEY: ${{ secrets.RENAISS_INDEX_API_KEY }}
+          RENAISS_INDEX_API_SECRET: ${{ secrets.RENAISS_INDEX_API_SECRET }}
+          BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
+          GCP_SERVICE_ACCOUNT_BASE64: ${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }}
         run: |
           set +e
-          # Path A: firebase CLI (may 403 if SA lacks Firebase Extensions Viewer)
-          firebase deploy --only functions:merchantApi --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
+          PROJECT="${{ steps.sa.outputs.project_id }}"
+
+          # Path A: Firebase CLI (firebase-functions export in index.js)
+          firebase deploy --only functions:merchantApi --project "$PROJECT" --non-interactive --force
           code=$?
           if [ $code -eq 0 ]; then
             echo "mode=firebase" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          echo "firebase CLI failed ($code); trying gcloud gen2 http function"
-          # Path B: gcloud avoids firebaseextensions.googleapis.com list call.
-          # Stage ONLY server/ into a clean dir — monorepo root package.json has
-          # "build": vite client, which Cloud Build would run and fail (vite missing).
+          echo "firebase CLI failed ($code); trying gcloud + Functions Framework entry (function.js)"
+
+          # Path B: gcloud gen2 — stage server only, force main=function.js
+          # Root monorepo package.json has "build": vite and must NEVER be the source root.
           STAGE="${RUNNER_TEMP}/merchant-fn-src"
           rm -rf "$STAGE"
           mkdir -p "$STAGE"
-          # package.json name must stay renaiss-merchant-server (no monorepo root scripts)
           cp -a server/. "$STAGE/"
-          # Skip any npm lifecycle that could walk up; pure Node ESM runtime
+          # Point Cloud Build at Functions Framework entry (function.js).
+          # Avoid monorepo root package.json "build": vite entirely.
+          STAGE_DIR="$STAGE" node -e '
+            const fs = require("fs");
+            const pkgPath = process.env.STAGE_DIR + "/package.json";
+            const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+            pkg.main = "function.js";
+            pkg.scripts = pkg.scripts || {};
+            delete pkg.scripts.build;
+            pkg.scripts.start = "functions-framework --target=merchantApi";
+            fs.writeFileSync(pkgPath, JSON.stringify(pkg, null, 2));
+            console.log("staged package.json main=", pkg.main);
+          '
+          (cd "$STAGE" && npm ci --omit=dev)
+
+          # Pass secrets via env file to avoid argv leakage length limits
+          ENV_YAML="${RUNNER_TEMP}/merchant-fn-env.yaml"
+          cat > "$ENV_YAML" <<EOF
+          CORS_ORIGIN: "*"
+          IS_LOCAL_DEV: "false"
+          RENAISS_INDEX_API_KEY: "${RENAISS_INDEX_API_KEY}"
+          RENAISS_INDEX_API_SECRET: "${RENAISS_INDEX_API_SECRET}"
+          BSC_RPC_URL: "${BSC_RPC_URL}"
+          GCP_SERVICE_ACCOUNT_BASE64: "${GCP_SERVICE_ACCOUNT_BASE64}"
+          EOF
+          # strip accidental leading spaces from heredoc lines
+          sed -i 's/^[[:space:]]*//' "$ENV_YAML"
+
           gcloud functions deploy merchantApi \
             --gen2 \
             --runtime=nodejs20 \
@@ -307,33 +332,68 @@ jobs:
             --allow-unauthenticated \
             --memory=512MiB \
             --timeout=60s \
-            --set-build-env-vars="GOOGLE_NODE_RUN_SCRIPTS=" \
-            --set-env-vars="CORS_ORIGIN=*,IS_LOCAL_DEV=false" \
-            --project="${{ steps.sa.outputs.project_id }}"
+            --set-build-env-vars="GOOGLE_NODE_RUN_SCRIPTS=,GOOGLE_FUNCTION_TARGET=merchantApi" \
+            --env-vars-file="$ENV_YAML" \
+            --project="$PROJECT"
           code=$?
           if [ $code -eq 0 ]; then
             echo "mode=gcloud" >> "$GITHUB_OUTPUT"
-            # Inject secrets as env (separate update keeps values out of argv history less)
-            gcloud functions deploy merchantApi \
-              --gen2 \
-              --region=asia-east1 \
-              --update-env-vars="RENAISS_INDEX_API_KEY=${{ secrets.RENAISS_INDEX_API_KEY }},RENAISS_INDEX_API_SECRET=${{ secrets.RENAISS_INDEX_API_SECRET }},BSC_RPC_URL=${{ secrets.BSC_RPC_URL }},GCP_SERVICE_ACCOUNT_BASE64=${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }},CORS_ORIGIN=*,IS_LOCAL_DEV=false" \
-              --project="${{ steps.sa.outputs.project_id }}" || true
             exit 0
           fi
           echo "mode=failed" >> "$GITHUB_OUTPUT"
+          echo "::error::merchantApi deploy failed (firebase + gcloud). API cannot ship from renaiss-demo alone until this is green."
           exit $code
 
+      - name: Post-deploy health check
+        id: health
+        if: ${{ steps.fn.outcome == 'success' }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          set -e
+          PROJECT="${{ steps.sa.outputs.project_id }}"
+          URLS=(
+            "https://merchant.dokipoki.app/api/health"
+            "https://merchant-dokipoki-dev.web.app/api/health"
+          )
+          FN_URL=$(gcloud functions describe merchantApi --gen2 --region=asia-east1 --project="$PROJECT" --format='value(serviceConfig.uri)' 2>/dev/null || true)
+          if [ -n "$FN_URL" ]; then
+            URLS+=("${FN_URL%/}/api/health")
+            URLS+=("${FN_URL%/}/health")
+          fi
+          ok=0
+          for url in "${URLS[@]}"; do
+            echo "GET $url"
+            for i in 1 2 3 4 5 6 7 8; do
+              code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 25 "$url" || echo 000)
+              body=$(cat /tmp/health.json 2>/dev/null || true)
+              echo "  try=$i http=$code body=$body"
+              if [ "$code" = "200" ] && echo "$body" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+                ok=1
+                break 2
+              fi
+              sleep 8
+            done
+          done
+          if [ "$ok" != "1" ]; then
+            echo "::error::No health endpoint returned 200 after merchantApi deploy"
+            exit 1
+          fi
+          echo "health=ok" >> "$GITHUB_OUTPUT"
+
       - name: Summary
+        if: always()
         run: |
           echo "## Deploy summary" >> "$GITHUB_STEP_SUMMARY"
           echo "- Project: \`${{ steps.sa.outputs.project_id }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Function deploy: \`${{ steps.fn.outcome }}\` mode=\`${{ steps.fn.outputs.mode }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Health: \`${{ steps.health.outputs.health || 'n/a' }}\`" >> "$GITHUB_STEP_SUMMARY"
           echo "- Multi-site merchant: \`${{ steps.merchant_hosting.outputs.url }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Preview channel: \`${{ steps.channel.outputs.url }}\`" >> "$GITHUB_STEP_SUMMARY"
-          echo "- Path mount (Dokipoki Deploy to Dev): \`https://dokipoki-dev.web.app/merchant/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Custom domain: \`https://merchant.dokipoki.app/\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Path mount (optional Dokipoki): \`https://dokipoki-dev.web.app/merchant/\`" >> "$GITHUB_STEP_SUMMARY"
           if [ "${{ steps.fn.outcome }}" != "success" ]; then
             echo "" >> "$GITHUB_STEP_SUMMARY"
             echo "### Function deploy failed" >> "$GITHUB_STEP_SUMMARY"
-            echo "Grant the deploy SA **Firebase Extensions Viewer** (or Editor) on the GCP project, then re-run." >> "$GITHUB_STEP_SUMMARY"
+            echo "Primary path: \`firebase deploy --only functions:merchantApi\` (needs SA Firebase Admin / Extensions Viewer)." >> "$GITHUB_STEP_SUMMARY"
+            echo "Fallback: gcloud gen2 with \`server/function.js\` + Functions Framework (\`main=function.js\`)." >> "$GITHUB_STEP_SUMMARY"
           fi

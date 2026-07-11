@@ -1,0 +1,51 @@
+# Continuous liveness for merchant.dokipoki.app (Hosting rewrite → merchantApi).
+# Fails the run (and can page via GitHub notification / required check) when API is down.
+# Independent of Dokipoki deploy — pure renaiss-demo ops.
+
+name: health-monitor
+
+on:
+  schedule:
+    # Every 30 minutes
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: health-monitor
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Probe merchant API health
+        run: |
+          set -euo pipefail
+          URLS=(
+            "https://merchant.dokipoki.app/api/health"
+            "https://merchant-dokipoki-dev.web.app/api/health"
+          )
+          fail=0
+          for url in "${URLS[@]}"; do
+            echo "==> $url"
+            code=$(curl -sS -o /tmp/h.json -w '%{http_code}' --max-time 25 "$url" || echo 000)
+            body=$(cat /tmp/h.json 2>/dev/null || true)
+            echo "http=$code body=$body"
+            if [ "$code" != "200" ] || ! echo "$body" | grep -q '"status"[[:space:]]*:[[:space:]]*"ok"'; then
+              echo "::error::$url unhealthy"
+              fail=1
+            fi
+          done
+          if [ "$fail" = "1" ]; then
+            exit 1
+          fi
+          echo "all probes ok"
+
+      - name: Job summary
+        if: always()
+        run: |
+          echo "## Merchant health" >> "$GITHUB_STEP_SUMMARY"
+          echo "- merchant.dokipoki.app/api/health" >> "$GITHUB_STEP_SUMMARY"
+          echo "- merchant-dokipoki-dev.web.app/api/health" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Schedule: every 30m + workflow_dispatch" >> "$GITHUB_STEP_SUMMARY"

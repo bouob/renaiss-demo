@@ -75,13 +75,17 @@ Console checklist：`docs/merchant-domain-b-checklist-zh.md`
 
 資料夾內不得有任何 key/secret。只放 `.env.example`。詳 `PLAN.md` / `docs/KEYS-TODO.md`。
 
-## CI / 部署（`bouob/renaiss-demo`）
+## CI / 部署（`bouob/renaiss-demo` — 可獨立運作）
 
 | 觸發 | 行為 |
 |------|------|
-| PR / push | **build**：server `node --check` + client `npm run build`（注入 `VITE_*` secrets） |
-| push `main` | **deploy**：`merchantApi` + Hosting **preview channel** `merchant-preview`（**不蓋** live default hosting） |
-| workflow_dispatch + `deploy_live_hosting` | 才部署 live Hosting（慎用） |
-| Dokipoki `Deploy to Dev` | clone 本 repo → `base=/merchant/` → `dokipoki-dev.web.app/merchant/` |
+| PR / push | **build**：server `check` + `npm test` + client build（`VITE_*`） |
+| push `main` / dispatch | **deploy**：`merchantApi`（**必須成功**）+ Hosting multi-site `merchant-dokipoki-dev` + health curl |
+| `health-monitor` (每 30 分) | 探測 `merchant.dokipoki.app/api/health` |
+| workflow_dispatch + `deploy_live_hosting` | 才部署 **default** site live Hosting（慎用） |
+| Dokipoki `Deploy to Dev` | **可選** path `/merchant/` 鏡像，**不是** custom domain 真相源 |
+
+API entrypoints：`server/app.js`（Express）· `index.js`（Firebase）· `function.js`（gcloud FF）。  
+Ops 說明：`docs/ops-merchant-api.md`。
 
 Secrets 見 GitHub repo settings（與 `.env.example` 對齊）。

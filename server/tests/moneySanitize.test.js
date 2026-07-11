@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it } from 'node:test';
+import assert from 'node:assert/strict';
 import {
   sanitizeMoney,
   sanitizeQty,
@@ -7,36 +8,36 @@ import {
 } from '../lib/moneySanitize.js';
 
 describe('sanitizeMoney', () => {
-  it('accepts zero and cents', () => {
-    expect(sanitizeMoney(0)).toBe(0);
-    expect(sanitizeMoney('12.345')).toBe(12.35);
-    expect(sanitizeMoney(12.344)).toBe(12.34);
+  it('accepts zero and rounds to cents', () => {
+    assert.equal(sanitizeMoney(0), 0);
+    assert.equal(sanitizeMoney('12.345'), 12.35);
+    assert.equal(sanitizeMoney(12.344), 12.34);
   });
-  it('rejects negative, NaN, scientific, over max', () => {
-    expect(sanitizeMoney(-1)).toBeNull();
-    expect(sanitizeMoney('1e6')).toBeNull();
-    expect(sanitizeMoney(Infinity)).toBeNull();
-    expect(sanitizeMoney(MAX_MONEY + 1)).toBeNull();
+  it('rejects negative, scientific, over max', () => {
+    assert.equal(sanitizeMoney(-1), null);
+    assert.equal(sanitizeMoney('1e6'), null);
+    assert.equal(sanitizeMoney(Infinity), null);
+    assert.equal(sanitizeMoney(MAX_MONEY + 1), null);
   });
   it('blank → null', () => {
-    expect(sanitizeMoney('')).toBeNull();
-    expect(sanitizeMoney(null)).toBeNull();
+    assert.equal(sanitizeMoney(''), null);
+    assert.equal(sanitizeMoney(null), null);
   });
 });
 
 describe('sanitizeQty', () => {
   it('clamps and defaults', () => {
-    expect(sanitizeQty(null)).toBe(1);
-    expect(sanitizeQty(0)).toBe(1);
-    expect(sanitizeQty(3)).toBe(3);
-    expect(sanitizeQty(99999)).toBe(9999);
+    assert.equal(sanitizeQty(null), 1);
+    assert.equal(sanitizeQty(0), 1);
+    assert.equal(sanitizeQty(3), 3);
+    assert.equal(sanitizeQty(99999), 9999);
   });
 });
 
 describe('sanitizeNonNegInt', () => {
   it('rejects non-integers and negatives', () => {
-    expect(sanitizeNonNegInt(1.5)).toBeNull();
-    expect(sanitizeNonNegInt(-2)).toBeNull();
-    expect(sanitizeNonNegInt(42)).toBe(42);
+    assert.equal(sanitizeNonNegInt(1.5), null);
+    assert.equal(sanitizeNonNegInt(-2), null);
+    assert.equal(sanitizeNonNegInt(42), 42);
   });
 });
