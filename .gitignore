@@ -1,0 +1,35 @@
+# === 機敏資訊（PLAN.md §機敏資訊政策）——絕不 commit ===
+.env
+.env.*
+!.env.example
+*.local
+
+# service-account / 憑證
+*serviceAccount*.json
+*service-account*.json
+*.pem
+*.key
+gcp-*.json
+
+# === 依賴 / 建置產物 ===
+node_modules/
+dist/
+build/
+hosting-public/
+.vite/
+coverage/
+.firebase/
+firebase-debug.log
+firebase-debug.*.log
+sa.json
+*-sa.json
+
+# === 編輯器 / 系統 ===
+.DS_Store
+*.log
+.idea/
+.vscode/
+
+# === sprint / 暫存 ===
+.sprint/
+.temp/

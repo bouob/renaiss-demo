@@ -1,0 +1,28 @@
+{
+  "name": "renaiss-merchant-server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Renaiss Merchant Copilot — thin sync Express API (no Cloud Tasks / webhook / Privy). Mounted at /merchant/api/** as an independent merchantApi Cloud Function.",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "start": "node index.js",
+    "dev": "cross-env IS_LOCAL_DEV=true node index.js",
+    "test": "echo \"(no server tests yet)\" && exit 0",
+    "check": "node --check index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "express-rate-limit": "^7.4.0",
+    "firebase-admin": "^12.6.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3"
+  }
+}

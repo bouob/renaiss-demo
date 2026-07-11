@@ -1,0 +1,230 @@
+# Build always. On push to main: deploy Cloud Function + Hosting *preview channel*
+# (does NOT overwrite live Hosting site — safe if SA project is shared with Dokipoki).
+#
+# Live hosting promote is manual: workflow_dispatch with deploy_live_hosting=true
+# (still requires explicit confirmation intent).
+
+name: ci-deploy
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      deploy_live_hosting:
+        description: 'DANGEROUS if shared Firebase: deploy live hosting (not just preview channel)'
+        type: boolean
+        default: false
+      skip_deploy:
+        description: 'Only build (no firebase deploy)'
+        type: boolean
+        default: false
+
+concurrency:
+  group: ci-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Install server
+        working-directory: server
+        run: npm ci
+
+      - name: Syntax-check server
+        working-directory: server
+        run: |
+          node --check index.js
+          node --check routes/wall.js
+          node --check routes/movers.js
+          node --check routes/card.js
+          node --check routes/related.js
+          node --check routes/scan.js
+          node --check routes/meta.js
+          node --check routes/ticker.js
+
+      - name: Install client
+        working-directory: client
+        run: npm ci
+
+      - name: Build client (inject VITE_*)
+        working-directory: client
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: npm run build
+
+      - name: Prepare hosting-public layout
+        run: node scripts/prepare-hosting.mjs
+
+      - name: Upload hosting artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: hosting-public
+          path: hosting-public
+          retention-days: 7
+
+      - name: Upload server source (for deploy job)
+        uses: actions/upload-artifact@v4
+        with:
+          name: server-src
+          path: |
+            server
+            firebase.json
+            .firebaserc
+            package.json
+            scripts
+          retention-days: 1
+
+  deploy:
+    needs: build
+    if: >
+      github.event_name != 'pull_request' &&
+      (github.event_name != 'workflow_dispatch' || inputs.skip_deploy != true) &&
+      (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/master' || github.event_name == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: |
+            server/package-lock.json
+            client/package-lock.json
+
+      - name: Download hosting artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: hosting-public
+          path: hosting-public
+
+      - name: Install server deps
+        working-directory: server
+        run: npm ci
+
+      - name: Install client + rebuild (for local prepare parity)
+        working-directory: client
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+        run: |
+          npm ci
+          npm run build
+        # hosting-public already from artifact; refresh in case structure changes
+      - run: node scripts/prepare-hosting.mjs
+
+      - name: Write server runtime env (deployed with function package)
+        working-directory: server
+        env:
+          RENAISS_INDEX_API_KEY: ${{ secrets.RENAISS_INDEX_API_KEY }}
+          RENAISS_INDEX_API_SECRET: ${{ secrets.RENAISS_INDEX_API_SECRET }}
+          BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
+          GCP_SERVICE_ACCOUNT_BASE64: ${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }}
+        run: |
+          # CORS=* → reflect origin (preview channel hostnames vary)
+          cat > .env <<EOF
+          RENAISS_INDEX_API_KEY=${RENAISS_INDEX_API_KEY}
+          RENAISS_INDEX_API_SECRET=${RENAISS_INDEX_API_SECRET}
+          BSC_RPC_URL=${BSC_RPC_URL}
+          GCP_SERVICE_ACCOUNT_BASE64=${GCP_SERVICE_ACCOUNT_BASE64}
+          CORS_ORIGIN=*
+          IS_LOCAL_DEV=false
+          EOF
+          # strip leading spaces from heredoc if any
+          sed -i 's/^[[:space:]]*//' .env
+
+      - name: Decode GCP service account
+        id: sa
+        env:
+          GCP_SERVICE_ACCOUNT_BASE64: ${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }}
+        run: |
+          if [ -z "$GCP_SERVICE_ACCOUNT_BASE64" ]; then
+            echo "GCP_SERVICE_ACCOUNT_BASE64 missing — cannot deploy"
+            exit 1
+          fi
+          echo "$GCP_SERVICE_ACCOUNT_BASE64" | base64 -d > "${RUNNER_TEMP}/sa.json"
+          PROJECT_ID=$(node -e "console.log(JSON.parse(require('fs').readFileSync(process.env.RUNNER_TEMP+'/sa.json','utf8')).project_id)")
+          echo "project_id=$PROJECT_ID" >> "$GITHUB_OUTPUT"
+          echo "Resolved Firebase/GCP project: $PROJECT_ID"
+
+      - name: Point .firebaserc at SA project
+        run: |
+          node -e "
+            const fs=require('fs');
+            const p='${{ steps.sa.outputs.project_id }}';
+            fs.writeFileSync('.firebaserc', JSON.stringify({ projects: { default: p } }, null, 2));
+          "
+
+      - name: Install firebase-tools
+        run: npm install -g firebase-tools@13
+
+      - name: Deploy Cloud Function merchantApi
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          firebase deploy --only functions:merchantApi --project "${{ steps.sa.outputs.project_id }}" --non-interactive --force
+
+      - name: Deploy Hosting preview channel
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.deploy_live_hosting != true }}
+        id: channel
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          # Preview channel — does not replace live Hosting release
+          firebase hosting:channel:deploy merchant-preview \
+            --project "${{ steps.sa.outputs.project_id }}" \
+            --expires 14d \
+            --non-interactive \
+            > channel-out.txt 2>&1 || true
+          cat channel-out.txt
+          # Extract URL if present
+          URL=$(grep -oE 'https://[a-zA-Z0-9._-]+\.web\.app[a-zA-Z0-9/_-]*' channel-out.txt | head -n1 || true)
+          echo "url=$URL" >> "$GITHUB_OUTPUT"
+          if [ -z "$URL" ]; then
+            echo "WARNING: could not parse channel URL — see log above"
+          else
+            echo "Preview URL: $URL"
+            echo "Merchant path: ${URL%/}/merchant/"
+          fi
+
+      - name: Deploy live Hosting (explicit only)
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.deploy_live_hosting == true }}
+        env:
+          GOOGLE_APPLICATION_CREDENTIALS: ${{ runner.temp }}/sa.json
+        run: |
+          echo "Deploying LIVE hosting to project ${{ steps.sa.outputs.project_id }}"
+          firebase deploy --only hosting --project "${{ steps.sa.outputs.project_id }}" --non-interactive
+
+      - name: Summary
+        run: |
+          echo "## Deploy summary" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Project: \`${{ steps.sa.outputs.project_id }}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Function: \`merchantApi\` (asia-east1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Preview channel: \`merchant-preview\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Open: \`${{ steps.channel.outputs.url }}/merchant/\` (if parsed)" >> "$GITHUB_STEP_SUMMARY"

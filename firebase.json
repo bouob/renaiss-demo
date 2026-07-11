@@ -1,0 +1,54 @@
+{
+  "functions": [
+    {
+      "source": "server",
+      "codebase": "merchant",
+      "ignore": [
+        "node_modules",
+        ".git",
+        "firebase-debug.log",
+        "firebase-debug.*.log",
+        "*.local",
+        ".env.example"
+      ]
+    }
+  ],
+  "hosting": {
+    "public": "hosting-public",
+    "ignore": [
+      "firebase.json",
+      "**/.*",
+      "**/node_modules/**"
+    ],
+    "rewrites": [
+      {
+        "source": "/merchant/api/**",
+        "function": "merchantApi",
+        "region": "asia-east1"
+      },
+      {
+        "source": "/merchant",
+        "destination": "/merchant/index.html"
+      },
+      {
+        "source": "/merchant/**",
+        "destination": "/merchant/index.html"
+      },
+      {
+        "source": "/",
+        "destination": "/index.html"
+      }
+    ],
+    "headers": [
+      {
+        "source": "/merchant/assets/**",
+        "headers": [
+          {
+            "key": "Cache-Control",
+            "value": "public, max-age=31536000, immutable"
+          }
+        ]
+      }
+    ]
+  }
+}
