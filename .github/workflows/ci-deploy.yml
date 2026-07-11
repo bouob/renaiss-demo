@@ -309,18 +309,9 @@ jobs:
           '
           (cd "$STAGE" && npm ci --omit=dev)
 
-          # Pass secrets via env file to avoid argv leakage length limits
-          ENV_YAML="${RUNNER_TEMP}/merchant-fn-env.yaml"
-          cat > "$ENV_YAML" <<EOF
-          CORS_ORIGIN: "*"
-          IS_LOCAL_DEV: "false"
-          RENAISS_INDEX_API_KEY: "${RENAISS_INDEX_API_KEY}"
-          RENAISS_INDEX_API_SECRET: "${RENAISS_INDEX_API_SECRET}"
-          BSC_RPC_URL: "${BSC_RPC_URL}"
-          GCP_SERVICE_ACCOUNT_BASE64: "${GCP_SERVICE_ACCOUNT_BASE64}"
-          EOF
-          # strip accidental leading spaces from heredoc lines
-          sed -i 's/^[[:space:]]*//' "$ENV_YAML"
+          # Env: use ^|^ delimiter so URLs (":") and base64 don't break CSV/YAML parsing.
+          # Values must not contain the pipe character.
+          ENV_FLAGS="^|^CORS_ORIGIN=*|IS_LOCAL_DEV=false|RENAISS_INDEX_API_KEY=${RENAISS_INDEX_API_KEY}|RENAISS_INDEX_API_SECRET=${RENAISS_INDEX_API_SECRET}|BSC_RPC_URL=${BSC_RPC_URL}|GCP_SERVICE_ACCOUNT_BASE64=${GCP_SERVICE_ACCOUNT_BASE64}"
 
           gcloud functions deploy merchantApi \
             --gen2 \
@@ -333,7 +324,7 @@ jobs:
             --memory=512MiB \
             --timeout=60s \
             --set-build-env-vars="GOOGLE_NODE_RUN_SCRIPTS=" \
-            --env-vars-file="$ENV_YAML" \
+            --set-env-vars="$ENV_FLAGS" \
             --project="$PROJECT"
           code=$?
           if [ $code -eq 0 ]; then
