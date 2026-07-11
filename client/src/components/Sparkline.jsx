@@ -27,15 +27,17 @@ export default function Sparkline({ points = [], width = 320, height = 88, strok
   // Soft fill under curve
   const area = `${d} L ${width - pad},${height - pad} L ${pad},${height - pad} Z`;
 
+  const gradId = `sparkFill-${color.replace('#', '')}-${values.length}`;
+
   return (
     <svg className="sparkline" viewBox={`0 0 ${width} ${height}`} role="img" aria-label="Index sparkline">
       <defs>
-        <linearGradient id="sparkFill" x1="0" y1="0" x2="0" y2="1">
+        <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={color} stopOpacity="0.22" />
           <stop offset="100%" stopColor={color} stopOpacity="0" />
         </linearGradient>
       </defs>
-      <path d={area} fill="url(#sparkFill)" />
+      <path d={area} fill={`url(#${gradId})`} />
       <path d={d} fill="none" stroke={color} strokeWidth="2.25" strokeLinejoin="round" strokeLinecap="round" />
     </svg>
   );
