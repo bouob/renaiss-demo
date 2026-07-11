@@ -7,10 +7,22 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
 
   return (
     <div className="app-shell">
+      <div className="cyber-frame" aria-hidden="true">
+        <span className="cyber-corner tl" />
+        <span className="cyber-corner tr" />
+        <span className="cyber-corner bl" />
+        <span className="cyber-corner br" />
+      </div>
+
       <header className="topnav">
         <div className="brand">
-          <span>{t('nav.brand')}</span>
-          <span className="brand-sub">{t('nav.brandSub')}</span>
+          <span className="brand-mark" aria-hidden="true">
+            <span className="brand-pulse" />
+          </span>
+          <div className="brand-text">
+            <span className="brand-title">{t('nav.brand')}</span>
+            <span className="brand-sub">{t('nav.brandSub')}</span>
+          </div>
         </div>
         <nav>
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : undefined)}>
