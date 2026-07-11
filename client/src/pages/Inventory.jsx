@@ -10,6 +10,7 @@ import {
 import { fetchMovers } from '../lib/moversApi.js';
 import { classifyMerchantDecisionDetail } from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
+import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import Sparkline from '../components/Sparkline.jsx';
 
 function formatUsd(n) {
@@ -366,7 +367,19 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   {it.imageUrl && <img src={it.imageUrl} alt="" loading="lazy" />}
                   <div style={{ width: '100%' }}>
                     <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
-                      <strong>{it.name || cert}</strong>
+                      {resolveIndexUrl(it.href) ? (
+                        <a
+                          href={resolveIndexUrl(it.href)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => openIndexPage(it.href, e)}
+                          style={{ color: 'inherit', fontWeight: 650 }}
+                        >
+                          {it.name || cert} ↗
+                        </a>
+                      ) : (
+                        <strong>{it.name || cert}</strong>
+                      )}
                       {it.grade && <span className="chip">{it.grade}</span>}
                       <span className={`badge ${decision}`}>{decision}</span>
                       <span className="chip">{it.status || 'active'}</span>
