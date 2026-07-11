@@ -24,18 +24,30 @@ Edit / delete / scan on the seeded rows must keep working like any normal row.
   allowed, a "zero items" check would re-seed after a merchant clears their
   portfolio — so seeding is guarded by a one-time marker on the parent doc, not
   by item count.
-- **Seed contents:** 40 items. Cert data supplied by the product owner as
-  CSV/JSON and embedded in a static seed module. Until the real list lands, a
-  placeholder 40-item set stands in and is clearly marked as replaceable.
+- **Seed contents:** 18 real Renaiss graded cards supplied by the product owner
+  as `renaiss.xyz/card/{tokenId}` links. The identifier in those links is the
+  **NFT token ID**, not the inventory `cert`. Each token ID was resolved once
+  (offline, via the app's own `fetchNFTAttributes` + `getGradedFmv`) to its real
+  `cert` (PSA serial), `name`, `setName`, `grade`/`gradeLabel`, `imageUrl`,
+  `priceUsdCents`, and Renaiss `href`. All 18 resolved and were found in the
+  index (17 with a live FMV price; one — `PSA113221413` Vaporeon Ex — found but
+  no price). The resolved rows are baked into the static seed module as literal
+  data; no per-account network calls happen at seed time.
+
+  The seed module is just an array, so more cards can be appended later by
+  resolving additional token IDs the same way.
 
 ## Architecture
 
 ### 1. Seed data — `server/services/defaultPortfolioSeed.js`
 
-Static module exporting `DEFAULT_PORTFOLIO_ITEMS`: an array of 40 plain objects
-with the fields the inventory model understands (`cert`, `name`, `setName`,
-`grade`, `cost`, `listPrice`, `status`, optional `imageUrl`). No logic — just
-data — so it is trivial to swap for the real cert list.
+Static module exporting `DEFAULT_PORTFOLIO_ITEMS`: an array of the 18 resolved
+cards as plain objects using the fields the inventory model already understands
+(`cert`, `name`, `setName`, `grade`, `imageUrl`, `priceUsdCents`, `href`,
+`status: 'active'`). `cost` and `listPrice` are left unset — the merchant hasn't
+priced them, and the UI already derives a suggested sell from `priceUsdCents`
+(`listPrice ?? priceUsdCents * 1.05`). The one card with no index price seeds
+without `priceUsdCents`. No logic — just data.
 
 ### 2. Seed engine — `server/services/defaultPortfolio.js`
 
@@ -108,11 +120,14 @@ circular import.
 
 - `syntheticWallet`: deterministic (same uid → same address), valid address
   shape, distinct uids → distinct addresses.
-- `ensureDefaultPortfolio`: seeds 40 rows + marker on a fresh account; second
+- `ensureDefaultPortfolio`: seeds all rows + marker on a fresh account; second
   call is a no-op (idempotent); after simulated delete of all items, still does
   not re-seed because the marker persists. (adminDb mocked.)
 - `GET /meta` (smoke): fresh uid, no wallet param → response includes a synthetic
-  `wallet` and 40 items; passing an explicit wallet preserves existing behavior.
+  `wallet` and the seeded items; passing an explicit wallet preserves existing
+  behavior.
+- Seed-data sanity: every `DEFAULT_PORTFOLIO_ITEMS` row has a `cert` matching the
+  route's `CERT_SHAPE` (so none are silently dropped on write).
 
 ## Out of scope
 
