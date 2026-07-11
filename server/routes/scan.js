@@ -1,5 +1,5 @@
 /**
- * POST /scan — wallet scan → holdings + metadata + FMV (sync, IP rate-limited).
+ * POST /scan — wallet scan → holdings + metadata + FMV + pack cost prefill.
  * Rejects blocked/invalid wallets via walletGuard.
  */
 
@@ -9,6 +9,7 @@ import { isValidAddressShape, isAllowedWallet } from '../lib/walletGuard.js';
 import {
   fetchHoldings,
   fetchNFTAttributes,
+  enrichHoldingsWithPackCost,
   isConfigured as isChainConfigured,
 } from '../services/chainAdapters/bsc/renaissAdapter.js';
 import { getGradedFmv, isConfigured as isIndexConfigured } from '../services/renaissOsIndex.js';
@@ -32,16 +33,13 @@ router.post('/scan', scanLimiter, async (req, res) => {
   try {
     const address = String(req.body?.address ?? req.body?.wallet ?? '').trim();
 
-    // Reject branch: invalid shape
     if (!isValidAddressShape(address)) {
       return res.status(400).json({ error: 'invalid_wallet', code: 'invalid_shape', holdings: [] });
     }
-    // Reject branch: blocked platform contract / zero
     if (!isAllowedWallet(address)) {
       return res.status(400).json({ error: 'invalid_wallet', code: 'blocked_address', holdings: [] });
     }
 
-    // Accept branch
     if (!isChainConfigured()) {
       return res.json({
         address: address.toLowerCase(),
@@ -51,9 +49,13 @@ router.post('/scan', scanLimiter, async (req, res) => {
     }
 
     const holdingsMap = await fetchHoldings(address);
-    const tokenIds = [...(holdingsMap?.keys?.() ?? [])].slice(0, MAX_HOLDINGS);
+    const heldEntries = [...holdingsMap.entries()]
+      .filter(([, row]) => row?.held)
+      .slice(0, MAX_HOLDINGS);
 
-    const items = await runConcurrent(tokenIds, ATTR_CONCURRENCY, async (tokenId) => {
+    const costByToken = await enrichHoldingsWithPackCost(address, new Map(heldEntries));
+
+    const items = await runConcurrent(heldEntries, ATTR_CONCURRENCY, async ([tokenId, row]) => {
       try {
         const attrs = await fetchNFTAttributes(tokenId);
         const serial = attrs?.serial ?? attrs?.cert ?? attrs?.attributes?.serial ?? null;
@@ -61,6 +63,7 @@ router.post('/scan', scanLimiter, async (req, res) => {
         if (serial && isIndexConfigured()) {
           fmv = await getGradedFmv(String(serial));
         }
+        const costInfo = costByToken.get(String(tokenId)) ?? {};
         return {
           tokenId: String(tokenId),
           serial: serial ? String(serial) : null,
@@ -70,10 +73,12 @@ router.post('/scan', scanLimiter, async (req, res) => {
           imageUrl: attrs?.imageUrl ?? attrs?.image ?? null,
           renaissFmv: fmv,
           found: Boolean(fmv?.found),
-          // Chain-first cost hook for TASK-012 — adapter subset has no ledger;
-          // expose null so client/manual path is the explicit fallback.
-          onChainCostUsd: null,
-          costSource: 'unavailable',
+          acquireType: costInfo.acquireType ?? 'UNKNOWN',
+          onChainCostUsd: Number.isFinite(costInfo.onChainCostUsd) ? costInfo.onChainCostUsd : null,
+          costSource: costInfo.costSource ?? 'unavailable',
+          packPaymentTxHash: costInfo.packPaymentTxHash ?? null,
+          packContract: costInfo.packContract ?? null,
+          acquiredFrom: row?.acquiredFrom ?? null,
         };
       } catch {
         return null;
@@ -81,13 +86,15 @@ router.post('/scan', scanLimiter, async (req, res) => {
     });
 
     const holdings = items.filter(Boolean);
-    const certs = holdings.map((h) => h.serial).filter(Boolean);
-    rememberHeldCerts(certs);
+    rememberHeldCerts(holdings.map((h) => h.serial).filter(Boolean));
+
+    const packPrefill = holdings.filter((h) => Number.isFinite(h.onChainCostUsd)).length;
 
     return res.json({
       address: address.toLowerCase(),
       holdings,
       count: holdings.length,
+      packCostPrefillCount: packPrefill,
     });
   } catch (err) {
     console.warn(`[scan] unexpected error: ${err?.message ?? err}`);

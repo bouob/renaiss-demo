@@ -98,8 +98,13 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const fmvUsd = Number.isFinite(it.priceUsdCents)
       ? it.priceUsdCents / 100
       : (Number.isFinite(mover?.priceUsdCents) ? mover.priceUsdCents / 100 : null);
-    const cost = Number.isFinite(it.cost) ? it.cost : (Number.isFinite(it.onChainCostUsd) ? it.onChainCostUsd : null);
+    const cost = Number.isFinite(it.cost)
+      ? it.cost
+      : (Number.isFinite(it.onChainCostUsd) ? it.onChainCostUsd : null);
     const pnl = Number.isFinite(fmvUsd) && Number.isFinite(cost) ? fmvUsd - cost : null;
+    const pnlPct = Number.isFinite(pnl) && Number.isFinite(cost) && cost !== 0
+      ? (pnl / cost)
+      : null;
     return {
       ...it,
       alphaPct30d,
@@ -107,7 +112,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       damped: detail.damped,
       liquidityBand: detail.liquidityBand,
       fmvUsd,
+      cost,
       pnl,
+      pnlPct,
       suggested: suggestedSell({ ...it, fmvUsd }),
       series30d: it.series30d ?? [],
       mover,
@@ -127,9 +134,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     try {
       const res = await scanWallet(wallet.trim());
       const holdings = res?.holdings ?? [];
-      if (!user) {
-        // Local-only preview when not signed in
-        setItems(holdings.map((h) => ({
+      const mapped = holdings.map((h) => {
+        const packCost = Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null;
+        return {
           cert: h.serial || h.tokenId,
           name: h.name,
           setName: h.setName,
@@ -137,28 +144,40 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           imageUrl: h.imageUrl,
           priceUsdCents: h.renaissFmv?.priceUsdCents ?? null,
           href: h.renaissFmv?.href ?? null,
-          onChainCostUsd: h.onChainCostUsd,
-          costSource: h.costSource,
-          cost: null,
+          onChainCostUsd: packCost,
+          costSource: h.costSource ?? null,
+          acquireType: h.acquireType ?? null,
+          packPaymentTxHash: h.packPaymentTxHash ?? null,
+          // Prefill pack cost so PnL works without manual entry (Dokipoki-style)
+          cost: packCost,
           status: 'active',
           qty: 1,
-        })));
+        };
+      });
+      if (!user) {
+        setItems(mapped);
+        setCsvNote(
+          res?.packCostPrefillCount
+            ? `Scan OK · ${res.packCostPrefillCount}/${mapped.length} cards got pack cost prefilled`
+            : `Scan OK · ${mapped.length} cards (no pack payment matched for cost)`,
+        );
         return;
       }
       await withAuth(async (token) => {
-        for (const h of holdings) {
-          if (!h.serial) continue;
+        for (const h of mapped) {
+          if (!h.cert) continue;
           await putMeta({
-            cert: h.serial,
+            cert: h.cert,
             name: h.name,
             setName: h.setName,
             grade: h.grade,
             imageUrl: h.imageUrl,
-            priceUsdCents: h.renaissFmv?.priceUsdCents ?? null,
-            href: h.renaissFmv?.href ?? null,
-            cost: h.onChainCostUsd,
+            priceUsdCents: h.priceUsdCents,
+            href: h.href,
+            cost: h.cost,
             status: 'active',
             qty: 1,
+            notes: h.acquireType ? `acquire:${h.acquireType}` : null,
           }, { authToken: token });
         }
       });
@@ -395,11 +414,16 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                       </div>
                       <div className="small" style={{ marginTop: '0.3rem' }}>
                         cert {cert}
+                        {it.acquireType ? ` · ${it.acquireType}` : ''}
+                        {it.costSource && it.costSource !== 'unavailable' ? ` · cost:${it.costSource}` : ''}
                         {' · '}FMV {formatUsd(it.fmvUsd)}
                         {' · '}cost {formatUsd(it.cost)}
-                        {' · '}PnL {formatUsd(it.pnl)}
+                        {' · '}
+                        <span className={Number.isFinite(it.pnl) ? (it.pnl >= 0 ? 'chip pos' : 'chip neg') : ''}>
+                          PnL {formatUsd(it.pnl)}
+                          {Number.isFinite(it.pnlPct) ? ` (${(it.pnlPct * 100).toFixed(1)}%)` : ''}
+                        </span>
                         {' · '}α {Number.isFinite(it.alphaPct30d) ? `${(it.alphaPct30d * 100).toFixed(1)}%` : '—'}
-                        {' · '}suggest {formatUsd(it.suggested)}
                       </div>
                     </div>
                   </div>

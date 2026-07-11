@@ -21,6 +21,16 @@ const adminDb = null; // eslint-disable-line no-unused-vars -- documents the abs
 // ─── Contract + selectors ───────────────────────────────────────────────────
 
 export const CONTRACT = '0xF8646A3Ca093e97Bb404c3b25e675C0394DD5b30';
+const USDT_CONTRACT = '0x55d398326f99059ff775485246999027b3197955';
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
+// Pack sale contracts (same set as Dokipoki txClassifier) — NFTs leave these
+// to the buyer on pack open; USDT payments to these fund cost basis.
+export const PACK_SALE_CONTRACTS = new Set([
+  '0xaab5f5fa75437a6e9e7004c12c9c56cda4b4885a', // special / standard packs
+  '0x94e7732b0b2e7c51ffd0d56580067d9c2e2b7910', // $48 packs (OMEGA)
+  '0xb2891022648c5fad3721c42c05d8d283d4d53080', // $88 packs (RenaCrypt)
+  '0xfda4a907d23d9f24271bc47483c5b983831e325e', // $150/card packs (5-card bundle)
+]);
 // ERC-721 tokenURI(uint256) selector
 const TOKEN_URI_SELECTOR = '0xc87b56dd';
 
@@ -349,10 +359,14 @@ async function loadAllTransfers(walletAddress) {
 // ─── fetchHoldings ───────────────────────────────────────────────────────────
 
 /**
- * Returns a Map<tokenId, { held: boolean, latestTransferHash: string|null }>
- * for the given wallet. Walks all transfers chronologically; last
- * `to === wallet` wins per tokenId. Fails open to an empty Map — without a
- * network call — when BSC_RPC_URL is unconfigured.
+ * Returns a Map<tokenId, {
+ *   held: boolean,
+ *   latestTransferHash: string|null,
+ *   acquiredFrom: string|null,
+ *   acquiredBlock: number|null,
+ * }>
+ * Walks transfers chronologically; last `to === wallet` wins per tokenId.
+ * Fails open to an empty Map when BSC_RPC_URL is unconfigured.
  */
 export async function fetchHoldings(walletAddress) {
   if (!isConfigured()) return new Map();
@@ -369,9 +383,184 @@ export async function fetchHoldings(walletAddress) {
     const tokenId = normalizeTokenId(t.tokenId);
     if (!tokenId) continue;
     const to = (t.to ?? '').toLowerCase();
-    holdings.set(tokenId, { held: to === wallet, latestTransferHash: t.hash ?? null });
+    const from = (t.from ?? '').toLowerCase();
+    holdings.set(tokenId, {
+      held: to === wallet,
+      latestTransferHash: t.hash ?? null,
+      acquiredFrom: to === wallet ? from : (holdings.get(tokenId)?.acquiredFrom ?? null),
+      acquiredBlock: to === wallet ? normalizeBlock(t.blockNum) : (holdings.get(tokenId)?.acquiredBlock ?? null),
+    });
   }
   return holdings;
+}
+
+// ─── Pack purchase cost (minimal port of Dokipoki pack-payment correlation) ─
+
+async function paginatedUsdtOut(walletAddress) {
+  const out = [];
+  let pageKey;
+  let pages = 0;
+  while (pages < PAGINATION_MAX_PAGES) {
+    const result = await rpc('alchemy_getAssetTransfers', [
+      {
+        fromBlock: '0x0',
+        toBlock: 'latest',
+        fromAddress: walletAddress,
+        contractAddresses: [USDT_CONTRACT],
+        category: ['erc20'],
+        withMetadata: false,
+        maxCount: '0x3e8',
+        ...(pageKey ? { pageKey } : {}),
+      },
+    ]);
+    pages += 1;
+    out.push(...(result.transfers ?? []));
+    if (!result.pageKey) break;
+    pageKey = result.pageKey;
+  }
+  return out;
+}
+
+const packPurchasesCache = new Map(); // wallet -> { ts, purchases }
+
+/**
+ * USDT payments from wallet to known pack-sale contracts.
+ * Alchemy normalises ERC-20 `value` using token decimals (USDT human USD).
+ * @returns {Promise<Array<{txHash,blockNumber,amountUSD,packContract}>>}
+ */
+export async function loadPackPurchases(walletAddress) {
+  if (!isConfigured()) return [];
+  const key = walletAddress.toLowerCase();
+  const cached = packPurchasesCache.get(key);
+  if (cached && Date.now() - cached.ts < TRANSFERS_TTL_MS) return cached.purchases;
+
+  const usdtOut = await paginatedUsdtOut(walletAddress);
+  const purchases = [];
+  for (const t of usdtOut) {
+    const to = (t.to ?? '').toLowerCase();
+    if (!PACK_SALE_CONTRACTS.has(to)) continue;
+    const amount = Number(t.value);
+    purchases.push({
+      txHash: t.hash ?? null,
+      blockNumber: normalizeBlock(t.blockNum),
+      amountUSD: Number.isFinite(amount) ? amount : null,
+      packContract: to,
+    });
+  }
+  purchases.sort((a, b) => a.blockNumber - b.blockNumber);
+  packPurchasesCache.set(key, { ts: Date.now(), purchases });
+  return purchases;
+}
+
+function matchPackPayment(purchases, blockNumber, preferTxHash) {
+  if (!Array.isArray(purchases) || purchases.length === 0) return null;
+  if (preferTxHash) {
+    const sameTx = purchases.find(
+      (p) => p.txHash && String(p.txHash).toLowerCase() === String(preferTxHash).toLowerCase(),
+    );
+    if (sameTx) return sameTx;
+  }
+  const block = Number(blockNumber);
+  if (!Number.isFinite(block)) return null;
+  // Most recent pack payment at or before the NFT acquisition block
+  let best = null;
+  for (const p of purchases) {
+    if (p.blockNumber <= block) best = p;
+    else break;
+  }
+  // Also allow same-block / slightly later (payment sometimes lands same block)
+  if (!best) {
+    const near = purchases.find((p) => Math.abs(p.blockNumber - block) <= 2);
+    if (near) return near;
+  }
+  return best;
+}
+
+/**
+ * Classify acquisition + prefill per-card pack cost for currently-held tokens.
+ * PACK_PULL / MINT → correlate pack USDT payment; secondary transfer → no auto cost.
+ *
+ * Multi-card packs: if several held tokens share the same payment tx, divide
+ * total USDT by that group size (best-effort; unknown pack size uses group size).
+ *
+ * @param {string} walletAddress
+ * @param {Map<string, object>} holdingsMap - from fetchHoldings
+ * @returns {Promise<Map<string, {
+ *   acquireType: 'PACK_PULL'|'MINT'|'TRANSFER'|'UNKNOWN',
+ *   onChainCostUsd: number|null,
+ *   costSource: string,
+ *   packPaymentTxHash: string|null,
+ *   packContract: string|null,
+ * }>>}
+ */
+export async function enrichHoldingsWithPackCost(walletAddress, holdingsMap) {
+  const out = new Map();
+  if (!isConfigured() || !holdingsMap?.size) return out;
+
+  let purchases = [];
+  try {
+    purchases = await loadPackPurchases(walletAddress);
+  } catch (err) {
+    console.warn(`[renaissAdapter] loadPackPurchases failed: ${err?.message ?? err}`);
+    purchases = [];
+  }
+
+  /** @type {Map<string, string[]>} paymentTx -> tokenIds */
+  const paymentGroups = new Map();
+  const draft = new Map();
+
+  for (const [tokenId, row] of holdingsMap) {
+    if (!row?.held) continue;
+    const from = (row.acquiredFrom ?? '').toLowerCase();
+    let acquireType = 'UNKNOWN';
+    if (from && PACK_SALE_CONTRACTS.has(from)) acquireType = 'PACK_PULL';
+    else if (from === ZERO_ADDRESS) acquireType = 'MINT';
+    else if (from) acquireType = 'TRANSFER';
+
+    let payment = null;
+    if (acquireType === 'PACK_PULL' || acquireType === 'MINT') {
+      payment = matchPackPayment(purchases, row.acquiredBlock, row.latestTransferHash);
+    }
+
+    const paymentTx = payment?.txHash ? String(payment.txHash).toLowerCase() : null;
+    if (paymentTx) {
+      if (!paymentGroups.has(paymentTx)) paymentGroups.set(paymentTx, []);
+      paymentGroups.get(paymentTx).push(tokenId);
+    }
+
+    draft.set(tokenId, {
+      acquireType,
+      payment,
+      packContract: acquireType === 'PACK_PULL' ? from : (payment?.packContract ?? null),
+      packPaymentTxHash: paymentTx,
+    });
+  }
+
+  for (const [tokenId, d] of draft) {
+    let onChainCostUsd = null;
+    let costSource = 'unavailable';
+
+    if (d.acquireType === 'TRANSFER') {
+      costSource = 'secondary_transfer';
+    } else if (d.payment && Number.isFinite(d.payment.amountUSD) && d.payment.amountUSD > 0) {
+      const group = d.packPaymentTxHash ? paymentGroups.get(d.packPaymentTxHash) : null;
+      const n = group?.length > 0 ? group.length : 1;
+      onChainCostUsd = d.payment.amountUSD / n;
+      costSource = n > 1 ? 'pack_payment_split' : 'pack_payment';
+    } else if (d.acquireType === 'PACK_PULL' || d.acquireType === 'MINT') {
+      costSource = 'pack_unmatched';
+    }
+
+    out.set(tokenId, {
+      acquireType: d.acquireType,
+      onChainCostUsd: Number.isFinite(onChainCostUsd) ? onChainCostUsd : null,
+      costSource,
+      packPaymentTxHash: d.packPaymentTxHash,
+      packContract: d.packContract,
+    });
+  }
+
+  return out;
 }
 
 // ─── fetchNFTAttributes ──────────────────────────────────────────────────────
