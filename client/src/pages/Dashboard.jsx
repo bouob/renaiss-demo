@@ -4,6 +4,7 @@ import { fetchWall } from '../lib/wallApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import { fetchTicker } from '../lib/inventoryApi.js';
 import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
+import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 import MoversList from '../components/MoversList.jsx';
 import CardRowLink from '../components/CardRowLink.jsx';
 import IndexTile from '../components/IndexTile.jsx';
@@ -61,7 +62,7 @@ export default function Dashboard() {
         <div>
           <p className="label">{t('dashboard.label')}</p>
           <h1 className="h1">{t('dashboard.title')}</h1>
-          <p className="muted">{t('dashboard.subtitle')}</p>
+          <p className="muted">{linkDokipokiMentions(t('dashboard.subtitle'))}</p>
         </div>
         {!loading && movers.length > 0 && (
           <div className="hero-stats" aria-label="Decision summary">
@@ -178,7 +179,7 @@ export default function Dashboard() {
       </section>
 
       <p className="attr">
-        {t('index.attribution', { source: t('index.sourceLabel') })}
+        {linkDokipokiMentions(t('index.attribution', { source: t('index.sourceLabel') }))}
         {' '}
         <a href={indexHomeUrl} target="_blank" rel="noopener noreferrer">
           {t('index.sourceLabel')}

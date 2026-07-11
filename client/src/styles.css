@@ -152,6 +152,28 @@ a:hover {
   text-shadow: 0 0 12px rgba(0, 240, 255, 0.45);
 }
 
+/* Brand mentions → https://dokipoki.app/ */
+.dokipoki-link {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: rgba(0, 240, 255, 0.45);
+  text-underline-offset: 0.18em;
+}
+.dokipoki-link:hover {
+  color: var(--neon-cyan);
+  text-decoration-color: var(--neon-cyan);
+  text-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
+}
+.brand-sub .dokipoki-link,
+.brand-sub-link {
+  color: inherit;
+  text-decoration-color: rgba(0, 240, 255, 0.35);
+}
+.brand-sub .dokipoki-link:hover,
+.brand-sub-link:hover {
+  color: #7af7ff;
+}
+
 /* --- Shell --- */
 .app-shell {
   position: relative;

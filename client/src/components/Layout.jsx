@@ -1,6 +1,7 @@
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
+import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 
 export default function Layout({ children, user, onSignIn, onSignOut, authReady, firebaseOk }) {
   const { t } = useTranslation();
@@ -21,7 +22,9 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
           </span>
           <div className="brand-text">
             <span className="brand-title">{t('nav.brand')}</span>
-            <span className="brand-sub">{t('nav.brandSub')}</span>
+            <span className="brand-sub">
+              {linkDokipokiMentions(t('nav.brandSub'), 'dokipoki-link brand-sub-link')}
+            </span>
           </div>
         </div>
         <nav>
