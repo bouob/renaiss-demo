@@ -332,7 +332,7 @@ jobs:
             --allow-unauthenticated \
             --memory=512MiB \
             --timeout=60s \
-            --set-build-env-vars="GOOGLE_NODE_RUN_SCRIPTS=,GOOGLE_FUNCTION_TARGET=merchantApi" \
+            --set-build-env-vars="GOOGLE_NODE_RUN_SCRIPTS=" \
             --env-vars-file="$ENV_YAML" \
             --project="$PROJECT"
           code=$?
