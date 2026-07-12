@@ -11,7 +11,9 @@
 ## Global Constraints
 
 - Inventory storage key is **uid + cert** at `hackathonMerchantInventory/{uid}/items/{cert}`. Wallet is a row field, never part of the key.
-- `sanitizeItem` lives in **`server/lib/inventoryItem.js`** (tested). `server/routes/meta.js` currently has a **duplicate** inline copy — consolidate onto the shared module; do not add a third copy.
+- **Login is required; a Renaiss wallet binding is NOT.** The `/inventory` route is already wrapped in `RequireAuth` (`client/src/App.jsx:59-71`); `requireAuth` guards every `/meta` route. Do not remove either gate. The redesign removes only the *wallet* requirement, never auth. Guest/local branches in `Inventory.jsx` fire only in the fail-open case (`!firebaseOk`, local dev) — keep them.
+- `sanitizeItem` lives in **`server/lib/inventoryItem.js`** (tested) and `server/routes/meta.js:12` **already imports it** — there is no duplicate to consolidate. Add new fields to the shared module only.
+- **Default-portfolio seeding must be preserved.** `GET /meta` calls `ensureDefaultPortfolio(uid)` which seeds demo cards under a synthetic `seed.wallet`. The wallet-gate removal must keep those cards visible, not delete the seeding.
 - `CERT_SHAPE = /^[A-Za-z0-9._-]{3,64}$/`.
 - `addedVia` allowed values: exactly `'scan' | 'cert' | 'csv'` (anything else → dropped).
 - Server test command: `node --test server/tests/<file>` (run from repo root) or `npm --prefix server test`.
@@ -21,12 +23,13 @@
 
 ---
 
-### Task 1: Provenance fields in shared sanitizer + consolidate meta.js
+### Task 1: Provenance fields in shared sanitizer
 
 **Files:**
-- Modify: `server/lib/inventoryItem.js:28-68` (add `addedVia`, `sourceWallet`)
-- Modify: `server/routes/meta.js:12-88` (import shared `sanitizeItem`, delete local duplicate)
+- Modify: `server/lib/inventoryItem.js` (add `addedVia`, `sourceWallet` to `sanitizeItem`)
 - Test: `server/tests/inventoryItem.test.js`
+
+**Note:** `meta.js` already imports the shared `sanitizeItem` (no duplicate to consolidate) and the module already has an `alphaPct30d` field — insert the two new fields alongside the existing ones.
 
 **Interfaces:**
 - Produces: `sanitizeItem(body, cert)` now emits `addedVia?: 'scan'|'cert'|'csv'` and `sourceWallet?: string` (both dropped when null/invalid, like `wallet`).
@@ -83,59 +86,56 @@ And extend the null-drop block before `return patch;`:
 Run: `node --test server/tests/inventoryItem.test.js`
 Expected: PASS.
 
-- [ ] **Step 5: Consolidate meta.js onto the shared sanitizer**
+- [ ] **Step 5: Verify all server tests pass**
 
-In `server/routes/meta.js`: delete the local `STATUSES`, `ACQUIRE_TYPES`, `COST_SOURCES`, `sanitizeWallet`, `sanitizeString`, and `sanitizeItem` definitions (lines ~16-88, keep `COLLECTION`/`CERT_SHAPE` usage). Replace the imports so the route pulls shared symbols:
+Run: `npm --prefix server test`
+Expected: all tests PASS.
 
-```js
-import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem } from '../lib/inventoryItem.js';
-```
-
-Remove the now-unused direct imports of `sanitizeMoney`/`sanitizeQty`/`sanitizeNonNegInt` and `isValidAddressShape` from meta.js. Keep `adminDb`, `requireAuth`, `rememberHeldCert(s)` imports. Leave `export const COLLECTION` out of meta.js (now imported) and update any `COLLECTION` references to the imported constant.
-
-- [ ] **Step 6: Verify server still parses and all server tests pass**
-
-Run: `node --check server/routes/meta.js && npm --prefix server test`
-Expected: parse OK; all tests PASS.
-
-- [ ] **Step 7: Commit**
+- [ ] **Step 6: Commit**
 
 ```bash
-git add server/lib/inventoryItem.js server/routes/meta.js server/tests/inventoryItem.test.js
-git commit -m "feat(server): inventory provenance fields + share meta sanitizer
+git add server/lib/inventoryItem.js server/tests/inventoryItem.test.js
+git commit -m "feat(server): inventory provenance fields (addedVia/sourceWallet)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
 
 ---
 
-### Task 2: `GET /meta` returns all uid rows when no wallet filter
+### Task 2: `GET /meta` returns all uid rows when no wallet filter (keep seeding)
 
 **Files:**
 - Modify: `server/lib/inventoryItem.js` (add pure `selectInventoryItems`)
-- Modify: `server/routes/meta.js:107-134` (GET handler uses it, drops `wallet_required`)
+- Modify: `server/routes/meta.js` GET handler (lines ~38-73) — use the helper, drop the `wallet_required` dead-end, keep `ensureDefaultPortfolio` seeding.
 - Test: `server/tests/inventoryItem.test.js`
 
+**Login stays required** (`requireAuth` on the route). This removes only the *wallet* gate. Default-portfolio seeding (`ensureDefaultPortfolio`) must still run so demo cards keep appearing.
+
 **Interfaces:**
-- Consumes: `sanitizeWallet` (Task 1).
-- Produces: `selectInventoryItems(rows, walletFilter)` — `rows: Array<{wallet?: string}>`, `walletFilter: string|null`. Null/empty filter → returns `rows` unchanged; a filter → rows whose lowercased `wallet` equals it.
+- Consumes: `sanitizeWallet` (existing export).
+- Produces: `selectInventoryItems(rows, walletFilter, defaultWallet)` — `rows: Array<{wallet?: string}>`, `walletFilter: string|null`, `defaultWallet: string|null`. **No `walletFilter` → return all rows** (login-only view). With a `walletFilter` → rows whose lowercased `wallet` equals `walletFilter` **or** `defaultWallet` (keeps seeded demo cards visible next to a scanned wallet).
 
 - [ ] **Step 1: Write the failing test**
 
-Add to `server/tests/inventoryItem.test.js` (import `selectInventoryItems` in the top import line):
+Add to `server/tests/inventoryItem.test.js` (add `selectInventoryItems` to the top import line):
 
 ```js
 it('selectInventoryItems returns all rows when no wallet filter', () => {
   const rows = [{ cert: 'A', wallet: '0xaaa' }, { cert: 'B', wallet: null }];
-  assert.deepEqual(selectInventoryItems(rows, null).map((r) => r.cert), ['A', 'B']);
+  assert.deepEqual(selectInventoryItems(rows, null, null).map((r) => r.cert), ['A', 'B']);
 });
-it('selectInventoryItems filters by wallet when provided', () => {
+it('selectInventoryItems filters by wallet OR default wallet when provided', () => {
   const rows = [
-    { cert: 'A', wallet: '0xABCDEF0123456789ABCDEF0123456789ABCDEF01' },
+    { cert: 'A', wallet: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
     { cert: 'B', wallet: '0x1111111111111111111111111111111111111111' },
+    { cert: 'C', wallet: '0xDEF0000000000000000000000000000000000000' },
   ];
-  const out = selectInventoryItems(rows, '0xabcdef0123456789abcdef0123456789abcdef01');
-  assert.deepEqual(out.map((r) => r.cert), ['A']);
+  const out = selectInventoryItems(
+    rows,
+    '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    '0xdef0000000000000000000000000000000000000',
+  );
+  assert.deepEqual(out.map((r) => r.cert), ['A', 'C']); // scanned wallet + seeded default
 });
 ```
 
@@ -149,14 +149,19 @@ Expected: FAIL (`selectInventoryItems` not exported).
 In `server/lib/inventoryItem.js` add:
 
 ```js
-/** Filter mapped inventory rows by wallet. Null/empty filter returns all. */
-export function selectInventoryItems(rows, walletFilter) {
+/**
+ * Filter mapped inventory rows by wallet.
+ * No walletFilter → return all rows (login-only view).
+ * With walletFilter → rows matching it OR the seeded default wallet.
+ */
+export function selectInventoryItems(rows, walletFilter, defaultWallet = null) {
   const list = Array.isArray(rows) ? rows : [];
   const w = walletFilter ? String(walletFilter).toLowerCase() : '';
   if (!w) return list;
+  const dw = defaultWallet ? String(defaultWallet).toLowerCase() : '';
   return list.filter((row) => {
     const rw = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
-    return rw === w;
+    return rw === w || (dw && rw === dw);
   });
 }
 ```
@@ -168,7 +173,7 @@ Expected: PASS.
 
 - [ ] **Step 5: Rewire the GET handler**
 
-In `server/routes/meta.js`, replace the GET `/meta` body's wallet gate + inline filter. Import `selectInventoryItems` alongside the other shared imports. New handler body:
+In `server/routes/meta.js`, add `selectInventoryItems` to the existing `../lib/inventoryItem.js` import. Replace the GET `/meta` handler body (keep the `ensureDefaultPortfolio` call; remove the `walletFilter = ... || seed.wallet` defaulting and the `wallet_required` short-circuit; replace the inline filter with the helper):
 
 ```js
 router.get('/meta', requireAuth, async (req, res) => {
@@ -176,14 +181,22 @@ router.get('/meta', requireAuth, async (req, res) => {
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable', items: [] });
     }
+    const seed = await ensureDefaultPortfolio(req.uid).catch((err) => {
+      console.warn(`[meta:get] seed skipped: ${err?.message ?? err}`);
+      return { wallet: null, seeded: false };
+    });
+    // Login-only: no ?wallet= returns every card under this uid (incl. seeded
+    // demo cards). A ?wallet= narrows to that wallet, but seeded default cards
+    // stay visible alongside it.
     const walletFilter = sanitizeWallet(req.query?.wallet); // null when absent/invalid
+    const defaultWallet = seed.wallet ? seed.wallet.toLowerCase() : null;
     const snap = await adminDb
       .collection(COLLECTION)
       .doc(req.uid)
       .collection('items')
       .get();
     const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
-    const items = selectInventoryItems(rows, walletFilter);
+    const items = selectInventoryItems(rows, walletFilter, defaultWallet);
     rememberHeldCerts(items.map((i) => i.cert || i.id));
     return res.json({ items, uid: req.uid, wallet: walletFilter });
   } catch (err) {
@@ -202,7 +215,7 @@ Expected: parse OK; all PASS.
 
 ```bash
 git add server/lib/inventoryItem.js server/routes/meta.js server/tests/inventoryItem.test.js
-git commit -m "feat(server): GET /meta returns all uid rows without wallet filter
+git commit -m "feat(server): GET /meta returns all uid rows without wallet (login-only)
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
