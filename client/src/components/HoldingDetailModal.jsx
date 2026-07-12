@@ -433,13 +433,11 @@ export default function HoldingDetailModal({
                 <p className="small muted" style={{ margin: 0 }}>{t('detail.adjacentHint')}</p>
               </div>
 
-              {relatedBusy && (
+              {relatedBusy ? (
                 <p className="small adjacent-loading" role="status" aria-live="polite">
                   {t('detail.adjacentLoading')}
                 </p>
-              )}
-
-              {!related && !relatedBusy && (
+              ) : !related ? (
                 <div className="adjacent-section-actions">
                   <button
                     type="button"
@@ -450,25 +448,20 @@ export default function HoldingDetailModal({
                     {t('detail.adjacentLoad')}
                   </button>
                 </div>
-              )}
-
-              {related && notice && (
+              ) : notice ? (
                 <div className="empty empty-actionable">
                   <span>{t(notice.key)}</span>
                   {notice.retryable && (
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      disabled={relatedBusy}
                       onClick={loadRelated}
                     >
                       {t('detail.adjacentRetry')}
                     </button>
                   )}
                 </div>
-              )}
-
-              {related && !notice && (
+              ) : (
                 <ul className="adjacent-list">
                   {related.neighbors.map((n) => (
                     <li key={n.cert} className="adjacent-list-item">

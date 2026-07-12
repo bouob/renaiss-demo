@@ -321,6 +321,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   async function handleUnlinkWallet() {
     const w = normalizeWallet(linkedWallet);
     if (!w || !user) return;
+    const removeCount = items.filter((it) => normalizeWallet(it.wallet) === w).length;
+    const short = `${w.slice(0, 6)}…${w.slice(-4)}`;
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(t('inventory.unlinkConfirm', { count: removeCount, wallet: short }))
+      : true;
+    if (!ok) return;
     setUnlinkBusy(true);
     setError(null);
     try {
@@ -417,9 +423,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         .filter((r) => r.cert));
       const sales = Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [];
       setStagedSales((prev) => [...prev, ...sales]);
-      // BenchmarkPanel scopes its inventory-vs-index series to this wallet.
-      rememberLastWallet(addr);
-      setLinkedWallet(addr);
+      // Do not mark the wallet as linked until confirm — collision filter /
+      // "linked" chrome should only apply after holdings are persisted.
     } catch (err) {
       setStageError(err?.message ?? t('inventory.scanFailed'));
     } finally {
@@ -497,11 +502,21 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setStageBusy(true);
     setStageError(null);
     try {
+      // Prefer a scanned wallet for link state (Benchmark + collision filter).
+      const scanW = normalizeWallet(
+        staged.find((r) => r.addedVia === 'scan' && r.wallet)?.wallet
+        || stagedSales[0]?.wallet
+        || '',
+      );
       if (user) {
         await withAuth(async (token) => {
           await persistBulk(staged, token, null);
           await persistStagedSales(token);
         });
+        if (scanW) {
+          rememberLastWallet(scanW);
+          setLinkedWallet(scanW);
+        }
         await loadInventory();
       } else {
         setItems((prev) => {
@@ -509,6 +524,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           for (const r of staged) byCert.set(String(r.cert), { ...byCert.get(String(r.cert)), ...r });
           return [...byCert.values()];
         });
+        if (scanW) {
+          rememberLastWallet(scanW);
+          setLinkedWallet(scanW);
+        }
       }
       const guestNote = user ? '' : ` ${t('inventory.guestConfirmNote')}`;
       setCsvNote(t('inventory.confirmSaved', { count: staged.length }) + guestNote);

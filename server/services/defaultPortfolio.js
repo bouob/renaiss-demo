@@ -143,8 +143,10 @@ export async function restoreMissingDefaultItems(uid, db = adminDb) {
 }
 
 /**
- * Drop every inventory row bound to `wallet`, then restore any missing demo
- * seed certs. Sales history is left intact (caller may clear client link only).
+ * Drop every inventory row bound to `wallet` and restore any missing demo seed
+ * certs in **one** Firestore batch so a mid-flight failure cannot leave the
+ * account with personal rows deleted and demo certs unrestored.
+ * Sales history is left intact (caller may clear client link only).
  *
  * @param {string} uid
  * @param {string} wallet
@@ -156,19 +158,46 @@ export async function unlinkWalletInventory(uid, wallet, db = adminDb) {
   const w = String(wallet || '').trim().toLowerCase();
   if (!/^0x[0-9a-f]{40}$/.test(w)) return { wallet: null, removed: 0, restored: 0 };
 
-  const itemsCol = db.collection(COLLECTION).doc(uid).collection('items');
+  const demoWallet = syntheticWallet(uid);
+  const parentRef = db.collection(COLLECTION).doc(uid);
+  const itemsCol = parentRef.collection('items');
   const snap = await itemsCol.get();
+
   const batch = db.batch();
   let removed = 0;
+  /** Certs that will still exist after deletes (non-linked rows). */
+  const remaining = new Set();
+
   for (const doc of snap.docs) {
-    const rowW = typeof doc.data()?.wallet === 'string' ? doc.data().wallet.toLowerCase() : '';
+    const data = doc.data() || {};
+    const rowW = typeof data.wallet === 'string' ? data.wallet.toLowerCase() : '';
     if (rowW === w) {
       batch.delete(doc.ref);
       removed += 1;
+    } else {
+      remaining.add(doc.id);
     }
   }
-  if (removed > 0) await batch.commit();
 
-  const { restored } = await restoreMissingDefaultItems(uid, db);
+  let restored = 0;
+  const now = new Date().toISOString();
+  for (const item of DEFAULT_PORTFOLIO_ITEMS) {
+    if (remaining.has(item.cert)) continue;
+    const patch = sanitizeItem({ ...item, wallet: demoWallet }, item.cert);
+    batch.set(itemsCol.doc(item.cert), { ...patch, createdAt: patch.updatedAt }, { merge: true });
+    remaining.add(item.cert);
+    restored += 1;
+  }
+
+  if (restored > 0) {
+    batch.set(parentRef, {
+      defaultWallet: demoWallet,
+      seededDefaultAt: now,
+      seededDefaultExpansionAt: now,
+      seededDefaultExpansionVersion: DEFAULT_PORTFOLIO_EXPANSION_VERSION,
+    }, { merge: true });
+  }
+
+  if (removed > 0 || restored > 0) await batch.commit();
   return { wallet: w, removed, restored };
 }

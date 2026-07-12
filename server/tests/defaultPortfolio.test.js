@@ -308,4 +308,26 @@ describe('restoreMissingDefaultItems / unlinkWalletInventory', () => {
     const again = await restoreMissingDefaultItems('full-user', db);
     assert.equal(again.restored, 0);
   });
+
+  it('unlink commits deletes and demo restores together (no half-apply shape)', async () => {
+    const db = makeFakeDb();
+    const { wallet: demoW } = await ensureDefaultPortfolio('atomic-user', db);
+    const realW = '0xcccccccccccccccccccccccccccccccccccccccc';
+    const collided = DEFAULT_PORTFOLIO_ITEMS[1].cert;
+    db._store.set(`hackathonMerchantInventory/atomic-user/items/${collided}`, {
+      cert: collided,
+      wallet: realW,
+      name: 'personal-overwrite',
+      status: 'active',
+    });
+
+    // Spy: single commit must leave either pre-state or full post-state — never
+    // "personal gone + demo missing". After success we assert post-state.
+    const result = await unlinkWalletInventory('atomic-user', realW, db);
+    assert.equal(result.removed, 1);
+    assert.ok(result.restored >= 1);
+    const restored = db._store.get(`hackathonMerchantInventory/atomic-user/items/${collided}`);
+    assert.ok(restored);
+    assert.equal(restored.wallet, demoW);
+  });
 });

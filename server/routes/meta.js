@@ -10,6 +10,7 @@ import { adminDb } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
 import {
   ensureDefaultPortfolio,
+  syntheticWallet,
   unlinkWalletInventory,
 } from '../services/defaultPortfolio.js';
 import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
@@ -53,7 +54,9 @@ router.get('/meta', requireAuth, async (req, res) => {
       .doc(req.uid)
       .collection('items')
       .get();
-    const defaultWallet = seed.wallet ? seed.wallet.toLowerCase() : null;
+    // Always expose a demo wallet id so chips/filter work even when seed
+    // write failed (account may already have synthetic-wallet rows).
+    const defaultWallet = (seed.wallet || syntheticWallet(req.uid) || '').toLowerCase() || null;
     const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const items = selectInventoryItems(rows, walletFilter, defaultWallet);
     rememberHeldCerts(items.map((i) => i.cert || i.id));
