@@ -5,13 +5,8 @@ import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventor
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { provenanceLabel } from '../lib/provenance.js';
-import { formatUsdCents } from '../lib/money.js';
+import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
 import { adjacentNotice } from '../lib/adjacent.js';
-
-function formatUsd(n) {
-  if (!Number.isFinite(n)) return '—';
-  return `$${n.toFixed(2)}`;
-}
 
 /**
  * Inventory card detail — cost/pricing/notes/status + lazy AI verdict.
@@ -313,7 +308,7 @@ export default function HoldingDetailModal({
               <div className="stat-cell">
                 <span className="label">{t('detail.pnl')}</span>
                 <strong className={Number.isFinite(item.pnl) ? (item.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
-                  {formatUsd(item.pnl)}
+                  {formatUsdSigned(item.pnl)}
                   {Number.isFinite(item.pnlPct) ? ` (${(item.pnlPct * 100).toFixed(1)}%)` : ''}
                 </strong>
               </div>
@@ -424,16 +419,61 @@ export default function HoldingDetailModal({
                   {t('detail.renaissIndex')}
                 </button>
               )}
-              {/* Disabled until the mount-time /card lookup lands — it is what
-                  allowlists this cert for the /related gate (see loadRelated). */}
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm"
-                disabled={relatedBusy || seriesLoading}
-                onClick={loadRelated}
-              >
-                {relatedBusy ? '…' : t('detail.related')}
-              </button>
+            </div>
+
+            {/* Dedicated adjacent block — always visible. Lazy query on click
+                (does not auto-fire; preserves /related quota). Disabled until
+                the mount-time /card lookup lands for the guest allowlist gate. */}
+            <div className="glass-card adjacent-section">
+              <div className="adjacent-section-head">
+                <p className="label" style={{ margin: 0 }}>{t('detail.adjacent')}</p>
+                <p className="small muted" style={{ margin: 0 }}>{t('detail.adjacentHint')}</p>
+              </div>
+
+              {relatedBusy && (
+                <p className="small adjacent-loading" role="status" aria-live="polite">
+                  {t('detail.adjacentLoading')}
+                </p>
+              )}
+
+              {!related && !relatedBusy && (
+                <div className="adjacent-section-actions">
+                  <button
+                    type="button"
+                    className="btn btn-primary btn-sm"
+                    disabled={seriesLoading}
+                    onClick={loadRelated}
+                  >
+                    {t('detail.adjacentLoad')}
+                  </button>
+                </div>
+              )}
+
+              {related && notice && (
+                <div className="empty empty-actionable">
+                  <span>{t(notice.key)}</span>
+                  {notice.retryable && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={relatedBusy}
+                      onClick={loadRelated}
+                    >
+                      {t('detail.adjacentRetry')}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {related && !notice && (
+                <ul className="adjacent-list">
+                  {related.neighbors.map((n) => (
+                    <li key={n.cert} className="adjacent-list-item">
+                      {renderNeighbor(n)}
+                    </li>
+                  ))}
+                </ul>
+              )}
             </div>
 
             <div className="glass-card" style={{ padding: '0.85rem' }}>
@@ -473,36 +513,6 @@ export default function HoldingDetailModal({
                 </div>
               )}
             </div>
-
-            {related && (
-              <div className="adjacent-section">
-                <p className="label">{t('detail.adjacent')}</p>
-                <p className="small muted">{t('detail.adjacentHint')}</p>
-                {notice ? (
-                  <div className="empty empty-actionable">
-                    <span>{t(notice.key)}</span>
-                    {notice.retryable && (
-                      <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={relatedBusy}
-                        onClick={loadRelated}
-                      >
-                        {t('detail.adjacentRetry')}
-                      </button>
-                    )}
-                  </div>
-                ) : (
-                  <ul className="adjacent-list">
-                    {related.neighbors.map((n) => (
-                      <li key={n.cert} className="adjacent-list-item">
-                        {renderNeighbor(n)}
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
-            )}
           </div>
         </div>
       </div>

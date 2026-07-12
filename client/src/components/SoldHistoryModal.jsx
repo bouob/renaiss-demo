@@ -1,13 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { formatUsd, formatUsdSigned } from '../lib/money.js';
 
 const PAGE_SIZE = 15;
-
-function formatUsd(n) {
-  if (!Number.isFinite(n)) return '—';
-  const sign = n < 0 ? '-' : '';
-  return `${sign}$${Math.abs(n).toFixed(2)}`;
-}
 
 function formatDate(iso, locale) {
   if (!iso) return '—';
@@ -99,7 +94,7 @@ export default function SoldHistoryModal({ sales = [], summary = null, onClose }
             <div className="stat-cell">
               <span className="label">{t('sales.summaryPnl')}</span>
               <strong className={totals.totalRealizedPnlUsd >= 0 ? 'text-pos' : 'text-neg'}>
-                {formatUsd(totals.totalRealizedPnlUsd)}
+                {formatUsdSigned(totals.totalRealizedPnlUsd)}
               </strong>
             </div>
           </div>
@@ -165,7 +160,7 @@ export default function SoldHistoryModal({ sales = [], summary = null, onClose }
                           <td className="small">{formatUsd(s.costBasisUsd)}</td>
                           <td className="small">{formatUsd(s.soldPriceUsd)}</td>
                           <td className={Number.isFinite(pnl) ? (pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
-                            {formatUsd(pnl)}
+                            {formatUsdSigned(pnl)}
                           </td>
                         </tr>
                       );
@@ -203,7 +198,7 @@ export default function SoldHistoryModal({ sales = [], summary = null, onClose }
               <div className="sales-footer">
                 <span className="label">{t('sales.summaryPnl')}</span>
                 <strong className={totals.totalRealizedPnlUsd >= 0 ? 'text-pos' : 'text-neg'}>
-                  {formatUsd(totals.totalRealizedPnlUsd)}
+                  {formatUsdSigned(totals.totalRealizedPnlUsd)}
                 </strong>
               </div>
             </>

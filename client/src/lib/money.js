@@ -1,9 +1,9 @@
 /**
- * money.js — USD formatting for the Renaiss Index's cents-denominated prices.
+ * money.js — USD formatting for display.
  *
- * Every price the Renaiss OS Index returns (`priceUsdCents`) is an integer
- * number of cents. This module is the single place that turns those into
- * display strings or dollar numbers.
+ * Two input shapes exist in this app:
+ *   1. Renaiss Index integers in **cents** (`priceUsdCents`) → formatUsdCents / centsToUsd
+ *   2. Client-side **dollar** numbers (FMV, cost, P&L) → formatUsd / formatUsdSigned
  *
  * Not to be confused with `moneyInput.js`, which parses/clamps what a *user*
  * types into a money field — that is input sanitation, this is output
@@ -33,4 +33,31 @@ export function formatUsdCents(cents) {
 export function centsToUsd(cents) {
   if (!Number.isFinite(cents)) return null;
   return cents / 100;
+}
+
+/**
+ * Format a dollar amount for display (FMV, cost, portfolio totals).
+ * Accounting sign lives outside the `$`: `"-$5.00"`, not `"$-5.00"`.
+ *
+ * @param {number|null|undefined} n - dollars, e.g. 42.5 or -9.62.
+ * @returns {string} `"$42.50"` | `"-$9.62"` | `"—"`.
+ */
+export function formatUsd(n) {
+  if (!Number.isFinite(n)) return EM_DASH;
+  const sign = n < 0 ? '-' : '';
+  return `${sign}$${Math.abs(n).toFixed(2)}`;
+}
+
+/**
+ * Format a dollar amount with an explicit profit/loss sign.
+ * Positives get a leading `+` so columns scan as sentiment, not just magnitude.
+ *
+ * @param {number|null|undefined} n - dollars, e.g. 1.02 or -9.62.
+ * @returns {string} `"+$1.02"` | `"-$9.62"` | `"—"`.
+ */
+export function formatUsdSigned(n) {
+  if (!Number.isFinite(n)) return EM_DASH;
+  if (n > 0) return `+$${n.toFixed(2)}`;
+  if (n < 0) return `-$${Math.abs(n).toFixed(2)}`;
+  return '$0.00';
 }
