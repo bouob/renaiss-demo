@@ -36,10 +36,11 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
     }
   }, [getToken]);
 
-  const selectVs = useCallback(() => {
-    setTab('vs');
-    if (status === 'idle') loadSeries();
-  }, [status, loadSeries]);
+  // Lazily fetch whenever the Vs tab is active and idle: covers first
+  // activation and an account switch that resets status while on this tab.
+  useEffect(() => {
+    if (user && tab === 'vs' && status === 'idle') loadSeries();
+  }, [user, tab, status, loadSeries]);
 
   // Guests: no tab bar, Index view only (zero visual change, no auth fetch path).
   if (!user) {
@@ -56,7 +57,7 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
         </button>
         <button type="button" role="tab" aria-selected={tab === 'vs'}
                 className={`benchmark-tab ${tab === 'vs' ? 'active' : ''}`}
-                onClick={selectVs}>
+                onClick={() => setTab('vs')}>
           {t('benchmark.tabVs')}
         </button>
       </div>

@@ -1996,3 +1996,6 @@ code {
   background: rgba(255, 255, 255, 0.12);
   color: var(--fg, #fff);
 }
+.benchmark-vs-pane {
+  min-height: 220px;
+}
