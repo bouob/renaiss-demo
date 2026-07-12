@@ -75,6 +75,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [csvNote, setCsvNote] = useState(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [addMethod, setAddMethod] = useState(null);
+  const [staged, setStaged] = useState([]);
+  const [stagedSales, setStagedSales] = useState([]);
+  const [stageBusy, setStageBusy] = useState(false);
+  const [stageError, setStageError] = useState(null);
+  const [scanAddr, setScanAddr] = useState('');
+  const [certInput, setCertInput] = useState('');
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
@@ -348,6 +354,21 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     if (!token) throw new Error('Not signed in');
     return fn(token);
   }
+
+  const savedCerts = useMemo(() => new Set(items.map((i) => String(i.cert || i.id))), [items]);
+  function stageMany(list) { setStaged((prev) => { const byCert = new Map(prev.map((r) => [String(r.cert), r])); for (const row of list) if (row?.cert) byCert.set(String(row.cert), { ...byCert.get(String(row.cert)), ...row }); return [...byCert.values()]; }); }
+  function removeStaged(cert) { setStaged((prev) => prev.filter((r) => String(r.cert) !== String(cert))); }
+  function closeAddPanel() { setAddMethod(null); setStaged([]); setStagedSales([]); setStageError(null); setScanAddr(''); setCertInput(''); }
+  async function loadScan() {
+    const addr = normalizeWallet(scanAddr); if (!addr) { setStageError(t('inventory.walletInvalid')); return; }
+    setStageBusy(true); setStageError(null);
+    try { const res = await scanWallet(addr); const now = new Date().toISOString(); stageMany((res?.holdings ?? []).map((h) => ({ cert: h.serial || h.tokenId, name: h.name ?? null, setName: h.setName ?? null, grade: h.grade ?? null, imageUrl: h.imageUrl ?? null, indexImageUrl: h.indexImageUrl ?? null, priceUsdCents: h.renaissFmv?.priceUsdCents ?? null, href: h.renaissFmv?.href ?? null, onChainCostUsd: Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null, cost: Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null, acquireType: h.acquireType ?? null, costSource: h.costSource ?? null, status: 'active', qty: 1, wallet: addr, addedVia: 'scan', sourceWallet: addr, createdAt: now })).filter((r) => r.cert)); setStagedSales((prev) => [...prev, ...(Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [])]); } catch (err) { setStageError(err?.message ?? t('inventory.scanFailed')); } finally { setStageBusy(false); }
+  }
+  async function loadCert() {
+    const cert = certInput.trim(); if (!cert) return; setStageBusy(true); setStageError(null);
+    try { const res = await fetchCard(cert, { series: true }); if (!res?.found) { setStageError(t('inventory.certNotFound')); return; } stageMany([{ cert: res.cert, name: res.brief?.name ?? null, setName: res.brief?.setName ?? null, grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null, imageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, indexImageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, priceUsdCents: res.fmv?.priceUsdCents ?? res.brief?.priceUsdCents ?? null, href: res.fmv?.href ?? res.brief?.href ?? null, series30d: res.series30d ?? [], returnPct30d: res.returnPct30d ?? null, status: 'active', qty: 1, cost: null, costSource: 'manual', addedVia: 'cert', createdAt: new Date().toISOString() }]); setCertInput(''); } catch (err) { setStageError(err?.message ?? t('inventory.certFailed')); } finally { setStageBusy(false); }
+  }
+  function loadCsv(file) { if (!file) return; const reader = new FileReader(); reader.onload = () => { const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? '')); setStageError(rejected.length ? t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }) : null); const now = new Date().toISOString(); stageMany(accepted.map((row) => ({ ...row, addedVia: 'csv', createdAt: now }))); }; reader.readAsText(file); }
 
   async function handleScan(e) {
     e.preventDefault();
@@ -704,6 +725,19 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         <p className="small">{t('inventory.csvHint')} <code>cert</code></p>
         {csvNote && <p className="small">{csvNote}</p>}
       </section> */}
+
+      {addMethod && (
+        <section className="glass-card add-panel">
+          <div className="add-panel-head"><p className="label">{t('inventory.addPanelTitle', { method: t(`inventory.method${addMethod[0].toUpperCase()}${addMethod.slice(1)}`) })}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddModal(true)}>{t('inventory.changeMethod')}</button></div>
+          {addMethod === 'scan' && <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}><input className="input" placeholder={t('inventory.walletPlaceholder')} value={scanAddr} onChange={(e) => setScanAddr(e.target.value)} /><button className="btn btn-primary" type="button" disabled={stageBusy || !scanAddr.trim()} onClick={loadScan}>{stageBusy ? t('inventory.scanning') : t('inventory.scan')}</button></div>}
+          {addMethod === 'cert' && <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}><input className="input" placeholder={t('inventory.certPlaceholder')} value={certInput} onChange={(e) => setCertInput(e.target.value)} /><button className="btn btn-primary" type="button" disabled={stageBusy || !certInput.trim()} onClick={loadCert}>{stageBusy ? t('inventory.lookingUp') : t('inventory.add')}</button></div>}
+          {addMethod === 'csv' && <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsv(e.target.files?.[0])} />}
+          <p className="small">{t(`inventory.${addMethod}AddHint`)}</p>{stageError && <p className="small" style={{ color: 'var(--clear)' }}>{stageError}</p>}
+          <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
+          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(Number.isFinite(r.priceUsdCents) ? r.priceUsdCents / 100 : null)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
+          {/* Confirm/Discard footer added in Task 7 */}
+        </section>
+      )}
 
       {onBoard.length > 0 && (
         <section className="glass-card">
