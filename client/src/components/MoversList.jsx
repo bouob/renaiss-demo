@@ -66,7 +66,7 @@ export default function MoversList({ movers = [], emptyLabel }) {
 
         <div className="movers-list-body">
         {pageMovers.map((m, i) => {
-          const key = m.slug || m.href || `${m.name}-${m.cardNumber}-${i}`;
+          const key = `${m.slug || m.href || `${m.name}-${m.cardNumber}`}-${i}`;
           const indexUrl = resolveIndexUrl(m.href);
           const thumb = m.imageUrl || m.imageUrlThumb;
           const alpha = m.alphaPct30d;
