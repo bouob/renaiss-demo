@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BadgeCheck, ScanLine, Upload } from 'lucide-react';
 import {
   fetchMeta,
   putMeta,
@@ -650,7 +651,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             {!user && t('inventory.subtitleGuest')}
           </p>
         </div>
-        {(enriched.length > 0 || hasSalesData) && (
+        {!addMethod && (enriched.length > 0 || hasSalesData) && (
           <div className="hero-stats" aria-label="Portfolio snapshot">
             <div className="hero-stat">
               <span className="label">{t('inventory.statsCards')}</span>
@@ -756,7 +757,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         </section>
       )}
 
-      {onBoard.length > 0 && (
+      {!addMethod && onBoard.length > 0 && (
         <section className="glass-card">
           <p className="label">{t('inventory.onBoard', { count: onBoard.length })}</p>
           <div className="chip-row">
@@ -775,7 +776,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       )}
 
       {/* ── Inventory grid (Dokipoki-style holdings zone) ── */}
-      <section className="inventory-zone">
+      {!addMethod && <section className="inventory-zone">
         <div className="inventory-zone-head">
           <div>
             <h2 className="section-title">{t('inventory.yourInventory')}</h2>
@@ -818,6 +819,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 const cert = it.cert || it.id;
                 const decision = it.decision || 'hold';
                 const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
+                const imageUrl = it.indexImageUrl || it.imageUrl;
                 return (
                   <button
                     key={cert}
@@ -828,8 +830,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   >
                     <div className="inventory-row-card">
                       <div className="inventory-row-art">
-                        {it.indexImageUrl ? (
-                          <img src={it.indexImageUrl} alt="" loading="lazy" />
+                        {imageUrl ? (
+                          <img src={imageUrl} alt="" loading="lazy" />
                         ) : (
                           <div className="thumb-fallback inventory-row-fallback">{t('common.card')}</div>
                         )}
@@ -879,7 +881,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             )}
           </>
         )}
-      </section>
+      </section>}
 
       {selected && (
         <HoldingDetailModal
@@ -906,10 +908,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <div className="modal-card" onClick={(e) => e.stopPropagation()}>
             <p className="label">{t('inventory.addModalTitle')}</p><p className="small">{t('inventory.addModalSubtitle')}</p>
             <div className="method-grid">{[
-              { id: 'scan', title: t('inventory.methodScan'), desc: t('inventory.methodScanDesc') },
-              { id: 'cert', title: t('inventory.methodCert'), desc: t('inventory.methodCertDesc') },
-              { id: 'csv', title: t('inventory.methodCsv'), desc: t('inventory.methodCsvDesc') },
-            ].map((m) => <button key={m.id} type="button" className="method-card" onClick={() => { setAddMethod(m.id); setShowAddModal(false); }}><strong>{m.title}</strong><span className="small">{m.desc}</span></button>)}</div>
+              { id: 'scan', title: t('inventory.methodScan'), desc: t('inventory.methodScanDesc'), Icon: ScanLine },
+              { id: 'cert', title: t('inventory.methodCert'), desc: t('inventory.methodCertDesc'), Icon: BadgeCheck },
+              { id: 'csv', title: t('inventory.methodCsv'), desc: t('inventory.methodCsvDesc'), Icon: Upload },
+            ].map((m) => <button key={m.id} type="button" className="method-card" onClick={() => { setAddMethod(m.id); setShowAddModal(false); }}><m.Icon className="method-card-icon" aria-hidden="true" size={22} /><strong>{m.title}</strong><span className="small">{m.desc}</span></button>)}</div>
             <div className="modal-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddModal(false)}>{t('common.cancel', { defaultValue: 'Cancel' })}</button></div>
           </div>
         </div>
