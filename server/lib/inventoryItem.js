@@ -20,6 +20,18 @@ export function sanitizeWallet(v) {
   return w.toLowerCase();
 }
 
+/** Filter uid-scoped rows; a wallet filter also retains seeded default cards. */
+export function selectInventoryItems(rows, walletFilter, defaultWallet = null) {
+  const list = Array.isArray(rows) ? rows : [];
+  const w = walletFilter ? String(walletFilter).toLowerCase() : '';
+  if (!w) return list;
+  const dw = defaultWallet ? String(defaultWallet).toLowerCase() : '';
+  return list.filter((row) => {
+    const rw = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
+    return rw === w || (dw && rw === dw);
+  });
+}
+
 function sanitizeString(v, max) {
   if (typeof v !== 'string') return null;
   const s = v.trim().slice(0, max);

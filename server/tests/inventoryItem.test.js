@@ -1,6 +1,6 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem } from '../lib/inventoryItem.js';
+import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
 
 describe('inventoryItem shared module', () => {
   it('exposes the inventory collection name', () => assert.equal(COLLECTION, 'hackathonMerchantInventory'));
@@ -27,5 +27,18 @@ describe('inventoryItem shared module', () => {
     const bad = sanitizeItem({ addedVia: 'wat', sourceWallet: 'nope' }, 'PSA114662766');
     assert.ok(!('addedVia' in bad));
     assert.ok(!('sourceWallet' in bad));
+  });
+  it('selectInventoryItems returns all rows when no wallet filter', () => {
+    const rows = [{ cert: 'A', wallet: '0xaaa' }, { cert: 'B', wallet: null }];
+    assert.deepEqual(selectInventoryItems(rows, null, null).map((r) => r.cert), ['A', 'B']);
+  });
+  it('selectInventoryItems filters by wallet OR default wallet when provided', () => {
+    const rows = [
+      { cert: 'A', wallet: '0xAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA' },
+      { cert: 'B', wallet: '0x1111111111111111111111111111111111111111' },
+      { cert: 'C', wallet: '0xDEF0000000000000000000000000000000000000' },
+    ];
+    const out = selectInventoryItems(rows, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '0xdef0000000000000000000000000000000000000');
+    assert.deepEqual(out.map((r) => r.cert), ['A', 'C']);
   });
 });
