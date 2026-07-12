@@ -4,7 +4,9 @@
  * Uses REST generateContent — no @google/generative-ai dependency.
  */
 
-const MODEL = process.env.GEMINI_MODEL || 'gemini-2.0-flash-lite';
+// Must match a model the shared GEMINI_API_KEY can actually call — Dokipoki
+// runs 2.5-flash-lite on the same key (server/config/geminiModels.js).
+const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash-lite';
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
 
 const MERCHANT_SYSTEM_PROMPT = `You are a Pokémon TCG market analyst writing a short verdict for a merchant/dealer

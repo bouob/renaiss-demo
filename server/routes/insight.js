@@ -164,7 +164,9 @@ router.post('/insight/merchant', requireAuth, insightLimiter, async (req, res) =
         usage,
       });
     } catch (genErr) {
-      console.warn(`[insight:merchant] generate failed: ${genErr?.message ?? genErr}`);
+      // genErr.detail carries the upstream response body (truncated) — without
+      // it the log only says gemini_http_<status>, which is not diagnosable.
+      console.warn(`[insight:merchant] generate failed: ${genErr?.message ?? genErr}${genErr?.detail ? ` — ${genErr.detail}` : ''}`);
       if (cached.hit === 'stale' && cached.content) {
         const content = pickLocaleContent(cached.content, locale) || cached.content.en;
         return res.json({
