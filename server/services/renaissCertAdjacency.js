@@ -80,7 +80,11 @@ export function adjacentCerts(cert, span = 1) {
   const { grader, serialStr } = parsed;
   const width = serialStr.length;
   const serialNum = Number(serialStr);
-  if (!Number.isFinite(serialNum)) return [];
+  // CERT_PATTERN admits up to 20 digits, which overshoots MAX_SAFE_INTEGER.
+  // Such a value is still finite, so isFinite alone would let `serialNum + 1`
+  // silently round to a number that is not the neighbor — and we would query a
+  // real but unrelated cert. Real graders top out at 10 digits; refuse the rest.
+  if (!Number.isSafeInteger(serialNum)) return [];
 
   const results = [];
   const truncatedSpan = Math.trunc(span);
