@@ -1,4 +1,27 @@
-/** Idempotent per-account demo portfolio seeding. */
+/**
+ * Idempotent per-account demo portfolio seeding.
+ *
+ * Called from GET /meta, so a read endpoint writes. That is deliberate, not an
+ * oversight — this server has no sign-in hook to move it to: Firebase auth runs
+ * entirely client-side and requireAuth only verifies an ID token per request,
+ * so there is no server-side "account created" moment. The alternative — a
+ * POST /inventory/bootstrap the client calls after onAuthStateChanged — races
+ * the inventory GET that the same auth transition triggers, trading a purity
+ * concern for an empty-first-paint bug.
+ *
+ * The expansion/backfill path below has to stay lazy regardless: accounts that
+ * already exist cannot be reached by any user-create trigger. So moving the
+ * initial seed out would leave two seeding paths, not zero.
+ *
+ * Costs are bounded: an account already on the current version costs one parent
+ * read and returns; expansion runs once per account per version and reads the
+ * items collection once; the caller wraps this in a catch, so a seed failure
+ * never blocks the read.
+ *
+ * Revisit if the server ever grows a real auth-exchange endpoint (the way
+ * Dokipoki has POST /api/auth/privy) — then the initial seed belongs there and
+ * only the expansion stays here.
+ */
 import { createHash } from 'node:crypto';
 import { adminDb } from './firebaseAdmin.js';
 import { COLLECTION, sanitizeItem } from '../lib/inventoryItem.js';
