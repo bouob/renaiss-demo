@@ -20,7 +20,6 @@ import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
 const PAGE_SIZE = 50;
-const LAST_WALLET_KEY = 'merchant_last_wallet';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
@@ -73,17 +72,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [movers, setMovers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [wallet, setWallet] = useState(() => {
-    try {
-      return normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
-    } catch {
-      return '';
-    }
-  });
-  /** Last wallet that successfully loaded inventory (empty = no data shown). */
-  const [boundWallet, setBoundWallet] = useState('');
-  const [manualCert, setManualCert] = useState('');
-  const [busy, setBusy] = useState(null);
   const [csvNote, setCsvNote] = useState(null);
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
@@ -91,17 +79,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [sales, setSales] = useState([]);
   const [salesSummary, setSalesSummary] = useState(null);
   const [showSales, setShowSales] = useState(false);
-  const [defaultTried, setDefaultTried] = useState(false);
 
-  function rememberWallet(addr) {
-    const w = normalizeWallet(addr);
-    if (!w) return;
-    try {
-      localStorage.setItem(LAST_WALLET_KEY, w);
-    } catch { /* ignore */ }
-  }
-
-  // Market movers only — never auto-load inventory without a wallet.
   const loadMovers = useCallback(async () => {
     try {
       const moversRes = await fetchMovers().catch(() => ({ movers: [] }));
@@ -115,11 +93,31 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     loadMovers();
   }, [loadMovers]);
 
+  const loadInventory = useCallback(async () => {
+    if (!user) { setItems([]); setSales([]); setSalesSummary(null); return; }
+    setLoading(true); setError(null);
+    try {
+      const token = await getToken();
+      if (!token) { setItems([]); return; }
+      const [metaRes, salesRes] = await Promise.all([
+        fetchMeta({ authToken: token }),
+        fetchSales({ authToken: token }).catch(() => ({ sales: [], summary: null })),
+      ]);
+      setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+      setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
+      setSalesSummary(salesRes?.summary ?? null);
+    } catch (err) {
+      setError(err?.message ?? t('inventory.loadFailed'));
+      setItems([]); setSales([]); setSalesSummary(null);
+    } finally { setLoading(false); }
+  }, [user, getToken, t]);
+
+  useEffect(() => { loadInventory(); }, [loadInventory]);
+
   // Sign-out / auth drop: wipe inventory UI (do not keep previous wallet cards).
   useEffect(() => {
     if (!user) {
       setItems([]);
-      setBoundWallet('');
       setSelectedCert(null);
       setCsvNote(null);
       setPage(1);
@@ -127,37 +125,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSales([]);
       setSalesSummary(null);
       setShowSales(false);
-      setDefaultTried(false);
     }
   }, [user]);
 
-  // Restore a saved wallet when available. If it has no saved rows, discover
-  // and bind the server-seeded default portfolio so existing users also see
-  // the one-time expansion without manually entering a wallet.
-  useEffect(() => {
-    if (!user || defaultTried || boundWallet) return;
-    let stored = '';
-    try {
-      stored = normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
-    } catch { /* ignore */ }
-    setDefaultTried(true);
-    (async () => {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        if (stored) {
-          const saved = await fetchMeta({ authToken: token, wallet: stored });
-          if (Array.isArray(saved?.items) && saved.items.length > 0) {
-            await loadWalletInventory(stored, { quiet: true });
-            return;
-          }
-        }
-        const res = await fetchMeta({ authToken: token });
-        const discovered = normalizeWallet(res?.wallet || '');
-        if (discovered) await loadWalletInventory(discovered, { quiet: true });
-      } catch { /* fail open — merchant can still load manually */ }
-    })();
-  }, [user, defaultTried, boundWallet, getToken]);
 
   // Reset page when filter / inventory length changes
   useEffect(() => {
@@ -169,7 +139,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     if (!item?.cert) return;
     await putMeta({
       ...item,
-      wallet: walletAddr,
+      wallet: walletAddr ?? item.wallet ?? null,
       status: item.status || 'active',
       qty: item.qty ?? 1,
     }, { authToken: token });
@@ -180,7 +150,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       .filter((h) => h?.cert)
       .map((h) => ({
         ...h,
-        wallet: walletAddr,
+        wallet: walletAddr ?? h.wallet ?? null,
         status: h.status || 'active',
         qty: h.qty ?? 1,
       }));
@@ -191,7 +161,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  /** Load saved meta + sales (no chain scan). Signed-in only. */
+  // Legacy wallet-bound handlers retained temporarily during refactor.
+  if (false) {
   async function loadWalletInventory(walletAddr, { quiet } = {}) {
     const addr = normalizeWallet(walletAddr);
     if (!addr) {
@@ -272,6 +243,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     } finally {
       setBusy(null);
     }
+  }
+
   }
 
   const onBoard = useMemo(() => {
@@ -528,14 +501,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const next = {
       ...current,
       cert: current.cert || cert,
-      wallet: current.wallet || boundWallet || null,
+      wallet: current.wallet || null,
       status,
       ...extra,
     };
     setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
-    if (user && boundWallet) {
+    if (user) {
       try {
-        await withAuth((token) => persistItem(next, token, boundWallet));
+        await withAuth((token) => persistItem(next, token, null));
       } catch (err) {
         setError(err?.message ?? t('inventory.updateFailed'));
       }
@@ -570,16 +543,16 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const next = {
       ...current,
       cert: current.cert || cert,
-      wallet: current.wallet || boundWallet || null,
+      wallet: current.wallet || null,
       ...patch,
     };
     if (patch.cost !== undefined && patch.costSource == null) {
       next.costSource = 'manual';
     }
     setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
-    if (user && boundWallet) {
+    if (user) {
       try {
-        await withAuth((token) => persistItem(next, token, boundWallet));
+        await withAuth((token) => persistItem(next, token, null));
       } catch (err) {
         setError(err?.message ?? t('inventory.updateFailed'));
       }
@@ -636,14 +609,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             {t('inventory.subtitle')}
             {!user && t('inventory.subtitleGuest')}
           </p>
-          {boundWallet ? (
-            <p className="small" style={{ marginTop: '0.45rem' }}>
-              {t('inventory.boundWallet', { wallet: `${boundWallet.slice(0, 6)}…${boundWallet.slice(-4)}` })}
-              {user ? ` · ${t('inventory.boundSaved')}` : ` · ${t('inventory.boundLocal')}`}
-            </p>
-          ) : (
-            <p className="small" style={{ marginTop: '0.45rem' }}>{t('inventory.needWalletHint')}</p>
-          )}
         </div>
         {(enriched.length > 0 || hasSalesData) && (
           <div className="hero-stats" aria-label="Portfolio snapshot">
@@ -686,7 +651,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
       {error && <div className="empty" style={{ color: 'var(--clear)' }}>{error}</div>}
 
-      <section className="panel-grid">
+      {/* Add controls are rendered by the staged add panel. */}
+      {/* <section className="panel-grid">
         <form className="glass-card" onSubmit={handleScan}>
           <p className="label">{t('inventory.walletScan')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto auto', marginBottom: '0.5rem' }}>
@@ -735,7 +701,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         <input type="file" accept=".csv,text/csv" onChange={(e) => handleCsvFile(e.target.files?.[0])} />
         <p className="small">{t('inventory.csvHint')} <code>cert</code></p>
         {csvNote && <p className="small">{csvNote}</p>}
-      </section>
+      </section> */}
 
       {onBoard.length > 0 && (
         <section className="glass-card">
@@ -761,12 +727,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <div>
             <h2 className="section-title">{t('inventory.yourInventory')}</h2>
             <p className="small">
-              {!boundWallet
-                ? t('inventory.emptyUntilWallet')
-                : (loading
-                  ? t('common.loading')
-                  : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length }))}
-              {boundWallet && filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
+              {loading ? t('common.loading') : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length })}
+              {filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
             </p>
           </div>
           <div className="filter-pills" role="tablist" aria-label="Filter holdings">
@@ -785,10 +747,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           </div>
         </div>
 
-        {!boundWallet || enriched.length === 0 ? (
-          <div className="empty">
-            {!boundWallet ? t('inventory.emptyUntilWallet') : t('inventory.empty')}
-          </div>
+        {enriched.length === 0 ? (
+          <div className="empty">{t('inventory.emptyInventory')}</div>
         ) : filtered.length === 0 ? (
           <div className="empty">{t('inventory.filterEmpty')}</div>
         ) : (
@@ -872,7 +832,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           item={selected}
           user={user}
           getToken={getToken}
-          wallet={boundWallet}
+          wallet={selected.wallet || null}
           onClose={() => setSelectedCert(null)}
           onSaveCost={saveCost}
           onSaveDetails={saveDetailsGuarded}
