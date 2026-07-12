@@ -149,6 +149,7 @@ jobs:
           RENAISS_INDEX_API_SECRET: ${{ secrets.RENAISS_INDEX_API_SECRET }}
           BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
           GCP_SERVICE_ACCOUNT_BASE64: ${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           # CORS=* → reflect origin (preview channel hostnames vary)
           cat > .env <<EOF
@@ -156,6 +157,7 @@ jobs:
           RENAISS_INDEX_API_SECRET=${RENAISS_INDEX_API_SECRET}
           BSC_RPC_URL=${BSC_RPC_URL}
           GCP_SERVICE_ACCOUNT_BASE64=${GCP_SERVICE_ACCOUNT_BASE64}
+          GEMINI_API_KEY=${GEMINI_API_KEY}
           CORS_ORIGIN=*
           IS_LOCAL_DEV=false
           EOF
@@ -279,6 +281,7 @@ jobs:
           RENAISS_INDEX_API_SECRET: ${{ secrets.RENAISS_INDEX_API_SECRET }}
           BSC_RPC_URL: ${{ secrets.BSC_RPC_URL }}
           GCP_SERVICE_ACCOUNT_BASE64: ${{ secrets.GCP_SERVICE_ACCOUNT_BASE64 }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         run: |
           set +e
           PROJECT="${{ steps.sa.outputs.project_id }}"
@@ -315,7 +318,7 @@ jobs:
 
           # Env: use ^|^ delimiter so URLs (":") and base64 don't break CSV/YAML parsing.
           # Values must not contain the pipe character.
-          ENV_FLAGS="^|^CORS_ORIGIN=*|IS_LOCAL_DEV=false|RENAISS_INDEX_API_KEY=${RENAISS_INDEX_API_KEY}|RENAISS_INDEX_API_SECRET=${RENAISS_INDEX_API_SECRET}|BSC_RPC_URL=${BSC_RPC_URL}|GCP_SERVICE_ACCOUNT_BASE64=${GCP_SERVICE_ACCOUNT_BASE64}"
+          ENV_FLAGS="^|^CORS_ORIGIN=*|IS_LOCAL_DEV=false|RENAISS_INDEX_API_KEY=${RENAISS_INDEX_API_KEY}|RENAISS_INDEX_API_SECRET=${RENAISS_INDEX_API_SECRET}|BSC_RPC_URL=${BSC_RPC_URL}|GCP_SERVICE_ACCOUNT_BASE64=${GCP_SERVICE_ACCOUNT_BASE64}|GEMINI_API_KEY=${GEMINI_API_KEY}"
 
           gcloud functions deploy merchantApi \
             --gen2 \
