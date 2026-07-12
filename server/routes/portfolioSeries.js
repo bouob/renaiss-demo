@@ -21,33 +21,35 @@ import { getGradedFmv } from '../services/renaissOsIndex.js';
 import { buildPortfolioSeries as realBuild, ATTRIBUTION_URL } from '../services/renaissPortfolioSeries.js';
 import { readWallCache } from '../services/wallCache.js';
 import { fetchWallSummary } from './wall.js';
-import { isValidAddressShape } from '../lib/walletGuard.js';
+import { COLLECTION, sanitizeWallet } from '../lib/inventoryItem.js';
+import { runConcurrent } from '../utils/runConcurrent.js';
 
-const INVENTORY_COLLECTION = 'hackathonMerchantInventory';
-
-function sanitizeWallet(v) {
-  const w = typeof v === 'string' ? v.trim() : '';
-  if (!isValidAddressShape(w)) return null;
-  return w.toLowerCase();
-}
+// getGradedFmv shares one daily budget and circuit breaker across the whole
+// module, so a large inventory must not be walked one blocking request at a
+// time. Matches scan.js's pool size and holdings cap.
+const FMV_CONCURRENCY = 4;
+const MAX_HOLDINGS = 80;
 
 // Read held certs for uid+wallet, then enrich each with its FMV (found+href),
 // which is what buildPortfolioSeries groups on. Certs with no FMV still return
 // (renaissFmv: null) — the builder skips them via `!holding.renaissFmv?.found`.
 async function realLoadHoldings(uid, wallet) {
   if (!adminDb || !wallet) return [];
-  const snap = await adminDb.collection(INVENTORY_COLLECTION).doc(uid).collection('items').get();
-  const certs = snap.docs
+  const snap = await adminDb.collection(COLLECTION).doc(uid).collection('items').get();
+  const held = snap.docs
     .map((d) => ({ cert: d.data()?.cert || d.id, wallet: d.data()?.wallet }))
     .filter((row) => (typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '') === wallet)
     .map((row) => row.cert);
-
-  const holdings = [];
-  for (const cert of certs) {
-    const renaissFmv = await getGradedFmv(cert); // null-safe: adapter never throws
-    holdings.push({ cert, renaissFmv });
+  if (held.length > MAX_HOLDINGS) {
+    // The reported coverage.total counts only what we enriched, so say so.
+    console.warn(`[portfolio-series] ${held.length} holdings truncated to ${MAX_HOLDINGS}`);
   }
-  return holdings;
+  const certs = held.slice(0, MAX_HOLDINGS);
+
+  return runConcurrent(certs, FMV_CONCURRENCY, async (cert) => ({
+    cert,
+    renaissFmv: await getGradedFmv(cert), // null-safe: adapter never throws
+  }));
 }
 
 // Warm cache first; only compute a fresh summary if the /wall cache is cold.
