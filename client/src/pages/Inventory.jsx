@@ -417,16 +417,39 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setStageError(null);
     try {
       const res = await scanWallet(addr);
+      // Server fail-opens with 200 + warning/error when chain is down or
+      // unconfigured — surface those instead of a silent empty stage list.
+      if (res?.warning === 'chain_unconfigured' || res?.error === 'chain_unconfigured') {
+        setStaged([]);
+        setStagedSales([]);
+        setStageError(t('inventory.scanChainUnconfigured'));
+        return;
+      }
+      if (res?.error === 'scan_failed') {
+        setStaged([]);
+        setStagedSales([]);
+        setStageError(t('inventory.scanFailed'));
+        return;
+      }
       const now = new Date().toISOString();
-      stageMany((res?.holdings ?? [])
+      const rows = (res?.holdings ?? [])
         .map((h) => stagedRowFromHolding(h, addr, now))
-        .filter((r) => r.cert));
+        .filter((r) => r.cert);
+      stageMany(rows);
       const sales = Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [];
       setStagedSales((prev) => [...prev, ...sales]);
+      if (rows.length === 0 && sales.length === 0) {
+        setStageError(t('inventory.scanEmpty'));
+      }
       // Do not mark the wallet as linked until confirm — collision filter /
       // "linked" chrome should only apply after holdings are persisted.
     } catch (err) {
-      setStageError(err?.message ?? t('inventory.scanFailed'));
+      const code = err?.code || err?.message;
+      if (code === 'chain_unconfigured') {
+        setStageError(t('inventory.scanChainUnconfigured'));
+      } else {
+        setStageError(err?.message ?? t('inventory.scanFailed'));
+      }
     } finally {
       setStageBusy(false);
     }

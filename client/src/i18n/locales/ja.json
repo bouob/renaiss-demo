@@ -212,6 +212,8 @@
     "scanOkPrefill": "スキャン完了 · {{prefill}}/{{total}} 枚のパックコストを自動入力",
     "scanOk": "スキャン完了 · {{total}} 枚",
     "scanFailed": "スキャン失敗",
+    "scanEmpty": "このウォレットに鑑定済み保有／売却履歴はありません。",
+    "scanChainUnconfigured": "オンチェーンスキャンは現在利用できません（BSC RPC 未設定）。BSC_RPC_URL を Alchemy の https://…/v2/… に設定して再デプロイしてください。",
     "certNotFound": "この番号に Renaiss データなし（鑑定のみ・価格推測なし）。",
     "certFailed": "番号照会に失敗",
     "loadFailed": "在庫の読み込みに失敗",

@@ -75,6 +75,10 @@ if (!process.env.RENAISS_INDEX_API_KEY || !process.env.RENAISS_INDEX_API_SECRET)
 }
 if (!process.env.BSC_RPC_URL) {
   console.warn('[startup] BSC_RPC_URL not set — wallet scan (fetchHoldings) will fail-open to an empty result.');
+} else if (!/^(https:\/\/[^/]+)\/v2\/(.+)$/.test(String(process.env.BSC_RPC_URL).trim())) {
+  // isConfigured() requires an Alchemy-shaped …/v2/<key> URL; a bare RPC host
+  // or mistyped secret disables scan while looking "configured" in the dashboard.
+  console.warn('[startup] BSC_RPC_URL is set but not Alchemy /v2/ shape — wallet scan disabled (chain_unconfigured).');
 }
 if (!process.env.GCP_SERVICE_ACCOUNT_BASE64) {
   console.warn('[startup] GCP_SERVICE_ACCOUNT_BASE64 not set — Firestore-backed routes (/meta) will be unavailable until configured.');

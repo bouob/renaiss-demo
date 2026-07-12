@@ -212,6 +212,8 @@
     "scanOkPrefill": "掃描完成 · {{prefill}}/{{total}} 張已預填抽包成本",
     "scanOk": "掃描完成 · {{total}} 張",
     "scanFailed": "掃描失敗",
+    "scanEmpty": "此錢包沒有找到鑑定持倉或售出紀錄。",
+    "scanChainUnconfigured": "鏈上掃描目前無法使用（BSC RPC 未正確設定）。請設定 BSC_RPC_URL 為 Alchemy 的 https://…/v2/… 端點並重新部署。",
     "certNotFound": "此序號無 Renaiss 資料（僅鑑定卡、不猜價）。",
     "certFailed": "序號查詢失敗",
     "loadFailed": "無法載入庫存",
