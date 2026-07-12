@@ -18,6 +18,8 @@ const {
   __cacheSizeForTest,
 } = await import('../services/renaissAdjacentCertService.js');
 
+const { __resetForTest: resetMarketplace } = await import('../services/renaissMarketplaceLookup.js');
+
 const realFetch = globalThis.fetch;
 
 const CERT = 'PSA41932666';
@@ -55,8 +57,14 @@ function foundPayload(name) {
 function stubFetchByCert(byCert) {
   let calls = 0;
   globalThis.fetch = async (url) => {
+    const u = String(url);
+    // Marketplace tRPC enrich is best-effort and tested separately — keep it
+    // silent here so Index-call counts stay meaningful.
+    if (u.includes('renaiss.xyz') || u.includes('collectible.list')) {
+      return fakeResponse([{ result: { data: { json: { collection: [] } } } }]);
+    }
     calls += 1;
-    const hit = Object.entries(byCert).find(([cert]) => String(url).includes(cert));
+    const hit = Object.entries(byCert).find(([cert]) => u.includes(cert));
     return hit ? hit[1]() : fakeResponse({ found: false, reason: 'not_in_index' });
   };
   return () => calls;
@@ -66,6 +74,7 @@ describe('getAdjacentCertSuggestions', () => {
   beforeEach(() => {
     resetIndex();
     resetService();
+    resetMarketplace();
     // Bypass the Firestore graded-lookup cache so this file only exercises the
     // adjacency service's own in-memory cache.
     __setCacheForTest(async () => null, async () => {});

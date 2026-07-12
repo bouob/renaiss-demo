@@ -32,7 +32,20 @@ const UPSTREAM_HOST = 'api.renaissos.com';
 function countUpstreamCalls() {
   let calls = 0;
   globalThis.fetch = async (url, ...rest) => {
-    if (!String(url).includes(UPSTREAM_HOST)) return realFetch(url, ...rest);
+    const u = String(url);
+    // Marketplace tRPC enrich is best-effort; stub it so CI never depends on
+    // renaiss.xyz availability (and so this suite stays under a second).
+    if (u.includes('renaiss.xyz') || u.includes('collectible.list')) {
+      return {
+        status: 200,
+        ok: true,
+        headers: { get: () => null },
+        async json() {
+          return [{ result: { data: { json: { collection: [] } } } }];
+        },
+      };
+    }
+    if (!u.includes(UPSTREAM_HOST)) return realFetch(url, ...rest);
     calls += 1;
     return {
       status: 200,

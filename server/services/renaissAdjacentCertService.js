@@ -45,6 +45,7 @@
 
 import { adjacentCerts } from './renaissCertAdjacency.js';
 import { getGradedCardBrief } from './renaissOsIndex.js';
+import { lookupMarketplaceByCerts } from './renaissMarketplaceLookup.js';
 
 // Human-facing index site (attribution link target) — same value as
 // Dokipoki's renaissIndexService.js ATTRIBUTION_URL. Duplicated here rather
@@ -96,6 +97,7 @@ function writeCache(cert, result) {
  *     name: string|null, setName: string|null, cardNumber: string|null,
  *     gradeLabel: string|null, priceUsdCents: number|null, confidence: string|null,
  *     imageUrl: string|null, imageUrlThumb: string|null, href: string|null,
+ *     tokenId: string|null, renaissItemId: string|null,
  *     psaPop: null }>,
  *   attributionUrl: string,
  * }>} fail-open — `{ neighbors: [], attributionUrl }` on any failure mode,
@@ -114,7 +116,7 @@ export async function getAdjacentCertSuggestions(cert) {
     }
 
     const briefs = await Promise.all(candidates.map((c) => getGradedCardBrief(c.cert)));
-    const neighbors = briefs
+    const foundNeighbors = briefs
       .map((brief, i) => {
         if (!brief?.found) return null;
         // `language` was an internal-only routing field for the source's POP
@@ -124,6 +126,30 @@ export async function getAdjacentCertSuggestions(cert) {
         return { ...display, delta: candidates[i].delta, cert: candidates[i].cert, psaPop: null };
       })
       .filter(Boolean);
+
+    // Best-effort marketplace identity (tokenId + renaiss_item_id). Failures
+    // leave tokenId/renaissItemId null — client falls back to /?q={cert}.
+    // Does not participate in the both-success-only Index cache gate: a tRPC
+    // blip must not block caching a healthy Index neighbor list.
+    let marketByCert = new Map();
+    if (foundNeighbors.length > 0) {
+      try {
+        marketByCert = await lookupMarketplaceByCerts(foundNeighbors.map((n) => n.cert));
+      } catch (err) {
+        console.warn(`[renaissAdjacentCertService] marketplace enrich failed: ${err?.message ?? err}`);
+      }
+    }
+
+    const neighbors = foundNeighbors.map((n) => {
+      const m = marketByCert.get(String(n.cert).toUpperCase())
+        || marketByCert.get(n.cert)
+        || null;
+      return {
+        ...n,
+        tokenId: m?.tokenId ?? null,
+        renaissItemId: m?.renaissItemId ?? null,
+      };
+    });
 
     const result = { neighbors, attributionUrl: ATTRIBUTION_URL };
 
