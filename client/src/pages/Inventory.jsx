@@ -182,7 +182,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   // Legacy wallet-bound handlers retained temporarily during refactor.
   if (false) {
-  async function loadWalletInventory(walletAddr, { quiet } = {}) {
+  async function legacyLoadWalletInventory(walletAddr, { quiet } = {}) {
     const addr = normalizeWallet(walletAddr);
     if (!addr) {
       setItems([]);
@@ -230,7 +230,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSalesSummary(salesRes?.summary ?? null);
       setBoundWallet(addr);
       setWallet(addr);
-      rememberWallet(addr);
+      legacyRememberWallet(addr);
       if (!quiet) {
         const saleN = salesRes?.summary?.count ?? (salesRes?.sales?.length || 0);
         setCsvNote(t('inventory.loadOkSales', {
@@ -258,7 +258,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
     setBusy('load');
     try {
-      await loadWalletInventory(addr);
+      await legacyLoadWalletInventory(addr);
     } finally {
       setBusy(null);
     }
@@ -389,7 +389,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     } catch (err) { setStageError(err?.message ?? t('inventory.csvFailed')); } finally { setStageBusy(false); }
   }
 
-  async function handleScan(e) {
+  async function legacyScan(e) {
     e.preventDefault();
     const addr = normalizeWallet(wallet);
     if (!addr) {
@@ -446,7 +446,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         };
       });
       setPage(1);
-      setBoundWallet(addr);
       setItems(mapped);
       const saleRows = Array.isArray(res?.sales) ? res.sales : [];
       setSales(saleRows);
@@ -467,7 +466,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           }),
       );
 
-      rememberWallet(addr);
+      legacyRememberWallet(addr);
 
       // Persist only when signed in — backend rows follow uid + wallet.
       if (user) {
@@ -487,9 +486,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  async function handleManualCert(e) {
+  async function legacyManualCert(e) {
     e.preventDefault();
-    if (!boundWallet) {
+    if (!legacyWallet) {
       setError(t('inventory.needWalletFirst'));
       return;
     }
@@ -505,7 +504,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       }
       const item = {
         cert: res.cert,
-        wallet: boundWallet,
+        wallet: legacyWallet,
         name: res.brief?.name ?? null,
         setName: res.brief?.setName ?? null,
         grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null,
@@ -521,15 +520,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         costSource: 'manual',
       };
       if (user) {
-        await withAuth((token) => persistItem(item, token, boundWallet));
-        await loadWalletInventory(boundWallet);
+        await withAuth((token) => persistItem(item, token, legacyWallet));
+        await legacyLoadWalletInventory(legacyWallet);
       } else {
         setItems((prev) => {
           const rest = prev.filter((p) => p.cert !== item.cert);
           return [item, ...rest];
         });
       }
-      setManualCert('');
       setSelectedCert(item.cert);
     } catch (err) {
       setError(err?.message ?? t('inventory.certFailed'));
@@ -601,9 +599,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  function handleCsvFile(file) {
+  function legacyCsvFile(file) {
     if (!file) return;
-    if (!boundWallet) {
+    if (!legacyWallet) {
       setError(t('inventory.needWalletFirst'));
       return;
     }
@@ -612,11 +610,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? ''));
       setCsvNote(t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }));
       if (!accepted.length) return;
-      const withWallet = accepted.map((row) => ({ ...row, wallet: boundWallet }));
+      const withWallet = accepted.map((row) => ({ ...row, wallet: legacyWallet }));
       if (user) {
         try {
           await withAuth((token) => bulkMeta(withWallet, { authToken: token }));
-          await loadWalletInventory(boundWallet);
+          await legacyLoadWalletInventory(legacyWallet);
         } catch (err) {
           setError(err?.message ?? t('inventory.csvFailed'));
         }
@@ -695,7 +693,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
       {/* Add controls are rendered by the staged add panel. */}
       {/* <section className="panel-grid">
-        <form className="glass-card" onSubmit={handleScan}>
+        <form className="glass-card" onSubmit={legacyScan}>
           <p className="label">{t('inventory.walletScan')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto auto', marginBottom: '0.5rem' }}>
             <input
@@ -721,7 +719,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <p className="small">{t('inventory.loadVsScanHint')}</p>
         </form>
 
-        <form className="glass-card" onSubmit={handleManualCert}>
+        <form className="glass-card" onSubmit={legacyManualCert}>
           <p className="label">{t('inventory.manualCert')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
             <input
@@ -740,7 +738,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
       <section className="glass-card">
         <p className="label">{t('inventory.csvImport')}</p>
-        <input type="file" accept=".csv,text/csv" onChange={(e) => handleCsvFile(e.target.files?.[0])} />
+        <input type="file" accept=".csv,text/csv" onChange={(e) => legacyCsvFile(e.target.files?.[0])} />
         <p className="small">{t('inventory.csvHint')} <code>cert</code></p>
         {csvNote && <p className="small">{csvNote}</p>}
       </section> */}
