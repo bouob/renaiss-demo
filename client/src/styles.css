@@ -1673,20 +1673,24 @@ code {
   text-decoration: none;
   transition: background 0.18s var(--ease);
 }
-.movers-list-row-link:hover {
+.movers-list-row-link:hover,
+.adjacent-list-row-link:hover {
   background: rgba(0, 240, 255, 0.05);
   color: inherit;
   text-decoration: none;
   text-shadow: none;
 }
-.movers-list-card-cell {
+.movers-list-card-cell,
+.adjacent-list-card-cell {
   display: flex;
   align-items: center;
   gap: 0.7rem;
   min-width: 0;
 }
 .movers-list-card-cell img,
-.movers-list-thumb-fallback {
+.movers-list-thumb-fallback,
+.adjacent-list-card-cell img,
+.adjacent-list-thumb-fallback {
   width: 2.35rem;
   height: 3.2rem;
   flex: 0 0 auto;
@@ -1695,7 +1699,8 @@ code {
   object-fit: cover;
   background: #000;
 }
-.movers-list-thumb-fallback {
+.movers-list-thumb-fallback,
+.adjacent-list-thumb-fallback {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1704,23 +1709,28 @@ code {
   font-size: 0.55rem;
   text-align: center;
 }
-.movers-list-card-copy {
+.movers-list-card-copy,
+.adjacent-list-card-copy {
   display: flex;
   flex-direction: column;
   gap: 0.25rem;
   min-width: 0;
 }
 .movers-list-card-copy strong,
-.movers-list-card-copy span {
+.movers-list-card-copy span,
+.adjacent-list-card-copy strong,
+.adjacent-list-card-copy span {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.movers-list-card-copy strong {
+.movers-list-card-copy strong,
+.adjacent-list-card-copy strong {
   font-size: 0.82rem;
   line-height: 1.2;
 }
-.movers-list-card-copy span {
+.movers-list-card-copy span,
+.adjacent-list-card-copy span {
   color: var(--text-muted);
   font-size: 0.68rem;
 }
@@ -1733,6 +1743,69 @@ code {
 }
 .movers-list-align { text-align: right; }
 .movers-list-empty { border-top: 0; }
+
+/* Adjacent ±1 cert suggestions (HoldingDetailModal). Thumb + copy geometry is
+   shared with the .movers-list-* rules above; only the row layout differs. */
+.adjacent-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.adjacent-list {
+  overflow: hidden;
+  margin: 0;
+  padding: 0;
+  border: 1px solid var(--glass-border);
+  border-radius: var(--radius-sm);
+  background: rgba(0, 0, 0, 0.18);
+  list-style: none;
+}
+.adjacent-list-item + .adjacent-list-item { border-top: 1px solid rgba(255, 255, 255, 0.06); }
+.adjacent-list-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 0.7rem;
+  align-items: center;
+  min-height: 4.4rem;
+  padding: 0.6rem 0.75rem;
+  color: inherit;
+  text-decoration: none;
+  transition: background 0.18s var(--ease);
+}
+.adjacent-list-cert {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+}
+.adjacent-list-values {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 0.3rem;
+}
+/* Serial direction, not sentiment — a −1 neighbor is not a loss, so this stays
+   off the green/red .chip.pos/.chip.neg scale the rest of the app uses. */
+.adjacent-delta {
+  min-width: 2.2rem;
+  padding: 0.2rem 0.35rem;
+  border: 1px solid var(--glass-border);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.adjacent-delta.up { border-color: rgba(0, 240, 255, 0.3); color: var(--neon-cyan); }
+.adjacent-delta.down { border-color: rgba(255, 255, 255, 0.2); }
+.adjacent-confidence {
+  padding: 0.1rem 0.4rem;
+  font-size: 0.6rem;
+}
+.empty-actionable {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+  text-align: left;
+}
 
 /* Top on the board marquee */
 .top-board-gallery { display: flex; flex-direction: column; gap: 0.75rem; }
@@ -1788,10 +1861,14 @@ code {
 }
 @media (max-width: 420px) {
   .movers-list-header,
-  .movers-list-row { gap: 0.55rem; padding-left: 0.6rem; padding-right: 0.6rem; }
+  .movers-list-row,
+  .adjacent-list-row { gap: 0.55rem; padding-left: 0.6rem; padding-right: 0.6rem; }
   .movers-list-card-cell img,
-  .movers-list-thumb-fallback { width: 2rem; height: 2.8rem; }
-  .movers-list-card-copy strong { font-size: 0.74rem; }
+  .movers-list-thumb-fallback,
+  .adjacent-list-card-cell img,
+  .adjacent-list-thumb-fallback { width: 2rem; height: 2.8rem; }
+  .movers-list-card-copy strong,
+  .adjacent-list-card-copy strong { font-size: 0.74rem; }
   .movers-list-value { font-size: 0.7rem; }
 }
 

@@ -38,6 +38,12 @@
     "unavailable": "コストなし",
     "buy": "オンチェーン購入"
   },
+  "confidence": {
+    "prime": "最高信頼",
+    "high": "高信頼",
+    "medium": "中信頼",
+    "low": "低信頼"
+  },
   "common": {
     "loading": "読み込み中…",
     "close": "閉じる",
@@ -227,8 +233,15 @@
     "aiFresh": "新規生成",
     "aiRefresh": "再生成（日次枠を消費）",
     "adjacent": "隣接番号",
-    "gated": "ゲート済み — スキャン許可リスト外。",
+    "adjacentHint": "このシリアルの前後 1 番（±1）の鑑定カード。連番は同一の鑑定バッチであることが多いです。",
+    "adjacentDelta": "シリアル {{delta}}",
+    "gated": "照会許可リストに未登録 — 再試行してください。",
     "noNeighbors": "隣接カードなし。",
+    "adjacentInvalidCert": "この証明書形式に ±1 の隣接カードはありません。",
+    "adjacentUnavailable": "Renaiss インデックス未設定 — 隣接照会は利用できません。",
+    "adjacentRateLimited": "照会が多すぎます — しばらく待って再試行してください。",
+    "adjacentFailed": "隣接照会に失敗しました。",
+    "adjacentRetry": "再試行",
     "costSource": "コスト源"
   },
   "sales": {
