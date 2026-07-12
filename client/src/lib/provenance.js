@@ -4,11 +4,17 @@
  * detail modal render it — a component importing it from the page would invert
  * the dependency direction.
  *
- * @param {object} item - inventory row (addedVia / sourceWallet / createdAt).
+ * @param {object} item - inventory row (addedVia / sourceWallet / createdAt / wallet).
  * @param {(key: string, vars?: object) => string} t - i18next translator.
+ * @param {{ defaultWallet?: string|null }} [opts]
  * @returns {string} localized label, or '' when the row carries no provenance.
  */
-export function provenanceLabel(item, t) {
+export function provenanceLabel(item, t, opts = {}) {
+  const demoW = typeof opts.defaultWallet === 'string' ? opts.defaultWallet.toLowerCase() : '';
+  const rowW = typeof item?.wallet === 'string' ? item.wallet.toLowerCase() : '';
+  if (demoW && rowW && rowW === demoW) {
+    return t('inventory.provenanceDemo');
+  }
   const date = item?.createdAt ? new Date(item.createdAt).toLocaleDateString() : '';
   const wallet = item?.sourceWallet
     ? `${item.sourceWallet.slice(0, 6)}…${item.sourceWallet.slice(-4)}`

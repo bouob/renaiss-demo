@@ -17,6 +17,7 @@ import {
   fetchCard,
   fetchSales,
   bulkSales,
+  unlinkWallet,
 } from '../lib/inventoryApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import {
@@ -25,13 +26,26 @@ import {
 } from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import { parseMoney } from '../lib/moneyInput.js';
-import { normalizeWallet, rememberLastWallet } from '../lib/lastWallet.js';
+import {
+  clearLastWallet,
+  normalizeWallet,
+  readLastWallet,
+  rememberLastWallet,
+} from '../lib/lastWallet.js';
 import { centsToUsd, formatUsd, formatUsdSigned } from '../lib/money.js';
 import {
   normalizeSortDir,
   normalizeSortKey,
   sortInventoryItems,
 } from '../lib/inventorySort.js';
+import {
+  filterLinkedInventory,
+  isDemoItem,
+} from '../lib/demoInventory.js';
+import {
+  collectSalesWallets,
+  mergeSalesResponses,
+} from '../lib/salesMerge.js';
 import { provenanceLabel } from '../lib/provenance.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
@@ -85,6 +99,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [sales, setSales] = useState([]);
   const [salesSummary, setSalesSummary] = useState(null);
   const [showSales, setShowSales] = useState(false);
+  const [defaultWallet, setDefaultWallet] = useState(null);
+  const [linkedWallet, setLinkedWallet] = useState(() => readLastWallet());
+  const [unlinkBusy, setUnlinkBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -106,18 +123,37 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   }, [loadMovers]);
 
   const loadInventory = useCallback(async () => {
-    if (!user) { setItems([]); setSales([]); setSalesSummary(null); return; }
+    if (!user) {
+      setItems([]);
+      setSales([]);
+      setSalesSummary(null);
+      setDefaultWallet(null);
+      return;
+    }
     setLoading(true); setError(null);
     try {
       const token = await getToken();
       if (!token) { setItems([]); return; }
-      const [metaRes, salesRes] = await Promise.all([
-        fetchMeta({ authToken: token }),
-        fetchSales({ authToken: token }).catch(() => ({ sales: [], summary: null })),
-      ]);
-      setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
-      setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
-      setSalesSummary(salesRes?.summary ?? null);
+      const metaRes = await fetchMeta({ authToken: token });
+      const nextItems = Array.isArray(metaRes?.items) ? metaRes.items : [];
+      const demoW = typeof metaRes?.defaultWallet === 'string' ? metaRes.defaultWallet : null;
+      setItems(nextItems);
+      setDefaultWallet(demoW);
+
+      const last = readLastWallet();
+      setLinkedWallet(last);
+      const wallets = collectSalesWallets(nextItems, demoW, last);
+      if (wallets.length === 0) {
+        setSales([]);
+        setSalesSummary(null);
+      } else {
+        const salesRes = await Promise.all(
+          wallets.map((w) => fetchSales({ authToken: token, wallet: w }).catch(() => ({ sales: [] }))),
+        );
+        const merged = mergeSalesResponses(salesRes);
+        setSales(merged.sales);
+        setSalesSummary(merged.summary);
+      }
     } catch (err) {
       setError(err?.message ?? t('inventory.loadFailed'));
       setItems([]); setSales([]); setSalesSummary(null);
@@ -137,14 +173,15 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSales([]);
       setSalesSummary(null);
       setShowSales(false);
+      setDefaultWallet(null);
+      setLinkedWallet('');
     }
   }, [user]);
 
-
-  // Reset page when filter / sort / inventory length changes
+  // Reset page when filter / sort / inventory length / link changes
   useEffect(() => {
     setPage(1);
-  }, [filter, sortKey, sortDir, items.length]);
+  }, [filter, sortKey, sortDir, items.length, linkedWallet]);
 
   /** Persist one holding under the signed-in uid + wallet. */
   async function persistItem(item, token, walletAddr) {
@@ -173,22 +210,29 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
+  // When a wallet is linked: personal covers demo on same cert; demos still
+  // show for certs the personal wallet does not hold.
+  const visibleItems = useMemo(
+    () => filterLinkedInventory(items, linkedWallet, defaultWallet),
+    [items, linkedWallet, defaultWallet],
+  );
+
   const onBoard = useMemo(() => {
     const keys = new Set();
     for (const m of movers) {
       if (m.name) keys.add(String(m.name).toLowerCase());
       if (m.slug) keys.add(m.slug);
     }
-    return items.filter((it) => {
+    return visibleItems.filter((it) => {
       const nameHit = it.name && keys.has(String(it.name).toLowerCase());
       const hrefSlug = typeof it.href === 'string' && it.href.startsWith('/card/')
         ? it.href.slice('/card/'.length)
         : null;
       return nameHit || (hrefSlug && keys.has(hrefSlug));
     });
-  }, [items, movers]);
+  }, [visibleItems, movers]);
 
-  const enriched = useMemo(() => items.map((it) => {
+  const enriched = useMemo(() => visibleItems.map((it) => {
     const mover = movers.find((m) =>
       (it.name && m.name && String(it.name).toLowerCase() === String(m.name).toLowerCase())
       || (it.href && m.href && it.href === m.href),
@@ -213,6 +257,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       : null;
     return {
       ...it,
+      isDemo: isDemoItem(it, defaultWallet),
       alphaPct30d,
       decision: detail.decision || 'hold',
       damped: detail.damped,
@@ -225,7 +270,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       series30d: it.series30d ?? [],
       mover,
     };
-  }), [items, movers]);
+  }), [visibleItems, movers, defaultWallet]);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return enriched;
@@ -272,6 +317,26 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const pnl = withCost > 0 && fmv > 0 ? fmv - cost : null;
     return { fmv, cost, pnl, withCost, n: enriched.length };
   }, [enriched]);
+
+  async function handleUnlinkWallet() {
+    const w = normalizeWallet(linkedWallet);
+    if (!w || !user) return;
+    setUnlinkBusy(true);
+    setError(null);
+    try {
+      await withAuth(async (token) => {
+        await unlinkWallet(w, { authToken: token });
+      });
+      clearLastWallet();
+      setLinkedWallet('');
+      setCsvNote(t('inventory.unlinkOk'));
+      await loadInventory();
+    } catch (err) {
+      setError(err?.message ?? t('inventory.unlinkFailed'));
+    } finally {
+      setUnlinkBusy(false);
+    }
+  }
 
   const realizedPnl = Number.isFinite(salesSummary?.totalRealizedPnlUsd)
     ? salesSummary.totalRealizedPnlUsd
@@ -354,6 +419,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setStagedSales((prev) => [...prev, ...sales]);
       // BenchmarkPanel scopes its inventory-vs-index series to this wallet.
       rememberLastWallet(addr);
+      setLinkedWallet(addr);
     } catch (err) {
       setStageError(err?.message ?? t('inventory.scanFailed'));
     } finally {
@@ -619,6 +685,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             <p className="small">
               {loading ? t('common.loading') : t('inventory.ofCards', { filtered: sorted.length, total: enriched.length })}
               {filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
+              {linkedWallet ? ` · ${t('inventory.linkedWallet', { wallet: `${linkedWallet.slice(0, 6)}…${linkedWallet.slice(-4)}` })}` : ''}
             </p>
           </div>
           <div className="inventory-toolbar">
@@ -686,6 +753,17 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   <LayoutGrid size={16} strokeWidth={1.75} />
                 </button>
               </div>
+              {linkedWallet ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={unlinkBusy}
+                  onClick={handleUnlinkWallet}
+                  title={t('inventory.unlinkWalletHint')}
+                >
+                  {unlinkBusy ? t('inventory.unlinking') : t('inventory.unlinkWallet')}
+                </button>
+              ) : null}
               <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>
                 {t('inventory.addInventory')}
               </button>
@@ -729,6 +807,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                         <div className="small">
                           {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
                           {isPack ? ` · ${t('inventory.pack')}` : ''}
+                          {it.isDemo ? ` · ${t('inventory.sourceDemo')}` : ''}
                         </div>
                         <div className="inventory-tile-prices">
                           <span>{formatUsd(it.fmvUsd)}</span>
@@ -789,6 +868,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                           <span className="small inventory-row-sub">
                             {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
                             {isPack ? <span className="chip inventory-row-pack">{t('inventory.pack')}</span> : null}
+                            {it.isDemo ? <span className="chip inventory-row-demo">{t('inventory.sourceDemo')}</span> : null}
                           </span>
                         </div>
                       </div>
@@ -838,6 +918,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           user={user}
           getToken={getToken}
           wallet={selected.wallet || null}
+          defaultWallet={defaultWallet}
           onClose={() => setSelectedCert(null)}
           onSaveCost={saveCost}
           onSaveDetails={saveDetailsGuarded}

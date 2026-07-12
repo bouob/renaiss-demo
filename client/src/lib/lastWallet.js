@@ -27,3 +27,10 @@ export function rememberLastWallet(addr) {
     localStorage.setItem(LAST_WALLET_KEY, wallet);
   } catch { /* private mode / quota — the Vs tab just stays unscoped */ }
 }
+
+/** Clear the linked wallet (Inventory unlink + Benchmark unscoped). */
+export function clearLastWallet() {
+  try {
+    localStorage.removeItem(LAST_WALLET_KEY);
+  } catch { /* ignore */ }
+}

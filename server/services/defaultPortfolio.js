@@ -104,3 +104,71 @@ export async function ensureDefaultPortfolio(uid, db = adminDb) {
   await batch.commit();
   return { wallet, seeded: true };
 }
+
+/**
+ * Re-insert any DEFAULT_PORTFOLIO_ITEMS certs missing from the account.
+ * Used after unlinking a personal wallet so demo cards that were overwritten
+ * by a colliding cert come back. Does not touch existing rows.
+ *
+ * @param {string} uid
+ * @param {FirebaseFirestore.Firestore} [db]
+ * @returns {Promise<{ wallet: string|null, restored: number }>}
+ */
+export async function restoreMissingDefaultItems(uid, db = adminDb) {
+  if (!db || !uid) return { wallet: null, restored: 0 };
+  const wallet = syntheticWallet(uid);
+  const parentRef = db.collection(COLLECTION).doc(uid);
+  const itemsCol = parentRef.collection('items');
+  const existingSnap = await itemsCol.get();
+  const existing = new Set(existingSnap.docs.map((d) => d.id));
+  const now = new Date().toISOString();
+  const batch = db.batch();
+  let restored = 0;
+  for (const item of DEFAULT_PORTFOLIO_ITEMS) {
+    if (existing.has(item.cert)) continue;
+    const patch = sanitizeItem({ ...item, wallet }, item.cert);
+    batch.set(itemsCol.doc(item.cert), { ...patch, createdAt: patch.updatedAt }, { merge: true });
+    restored += 1;
+  }
+  if (restored > 0) {
+    batch.set(parentRef, {
+      defaultWallet: wallet,
+      seededDefaultAt: now,
+      seededDefaultExpansionAt: now,
+      seededDefaultExpansionVersion: DEFAULT_PORTFOLIO_EXPANSION_VERSION,
+    }, { merge: true });
+    await batch.commit();
+  }
+  return { wallet, restored };
+}
+
+/**
+ * Drop every inventory row bound to `wallet`, then restore any missing demo
+ * seed certs. Sales history is left intact (caller may clear client link only).
+ *
+ * @param {string} uid
+ * @param {string} wallet
+ * @param {FirebaseFirestore.Firestore} [db]
+ * @returns {Promise<{ wallet: string|null, removed: number, restored: number }>}
+ */
+export async function unlinkWalletInventory(uid, wallet, db = adminDb) {
+  if (!db || !uid) return { wallet: null, removed: 0, restored: 0 };
+  const w = String(wallet || '').trim().toLowerCase();
+  if (!/^0x[0-9a-f]{40}$/.test(w)) return { wallet: null, removed: 0, restored: 0 };
+
+  const itemsCol = db.collection(COLLECTION).doc(uid).collection('items');
+  const snap = await itemsCol.get();
+  const batch = db.batch();
+  let removed = 0;
+  for (const doc of snap.docs) {
+    const rowW = typeof doc.data()?.wallet === 'string' ? doc.data().wallet.toLowerCase() : '';
+    if (rowW === w) {
+      batch.delete(doc.ref);
+      removed += 1;
+    }
+  }
+  if (removed > 0) await batch.commit();
+
+  const { restored } = await restoreMissingDefaultItems(uid, db);
+  return { wallet: w, removed, restored };
+}

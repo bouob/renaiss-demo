@@ -27,6 +27,11 @@ export function bulkMeta(items, { authToken } = {}) {
   return postJson('/meta/bulk', { items }, { authToken });
 }
 
+/** Remove personal holdings for wallet and restore overwritten demo seed certs. */
+export function unlinkWallet(wallet, { authToken } = {}) {
+  return postJson('/meta/unlink-wallet', { wallet }, { authToken, timeoutMs: 60_000 });
+}
+
 export function fetchTicker(options = {}) {
   return getJson('/ticker', options);
 }

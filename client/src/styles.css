@@ -1325,6 +1325,12 @@ code {
 .inventory-row-pack {
   flex: 0 0 auto;
 }
+.inventory-row-demo {
+  flex: 0 0 auto;
+  opacity: 0.85;
+  border-color: rgba(0, 240, 255, 0.35);
+  color: var(--neon-cyan);
+}
 .inventory-row-num {
   text-align: right;
   font-family: var(--font-mono);

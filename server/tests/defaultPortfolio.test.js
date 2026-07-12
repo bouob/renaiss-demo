@@ -1,6 +1,11 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { syntheticWallet, ensureDefaultPortfolio } from '../services/defaultPortfolio.js';
+import {
+  syntheticWallet,
+  ensureDefaultPortfolio,
+  restoreMissingDefaultItems,
+  unlinkWalletInventory,
+} from '../services/defaultPortfolio.js';
 import { DEFAULT_PORTFOLIO_ITEMS } from '../services/defaultPortfolioSeed.js';
 
 function makeFakeDb() {
@@ -15,7 +20,11 @@ function makeFakeDb() {
     async get() {
       const docs = [...store.keys()]
         .filter((key) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
-        .map((key) => ({ id: key.slice(path.length + 1), data: () => store.get(key) }));
+        .map((key) => ({
+          id: key.slice(path.length + 1),
+          ref: makeDocRef(key),
+          data: () => store.get(key),
+        }));
       return { docs };
     },
   });
@@ -24,7 +33,16 @@ function makeFakeDb() {
     collection(name) { return makeCollectionRef(name); },
     batch() {
       const ops = [];
-      return { set(ref, data) { ops.push([ref.path, data]); return this; }, async commit() { for (const [path, data] of ops) store.set(path, { ...(store.get(path) || {}), ...data }); } };
+      return {
+        set(ref, data) { ops.push({ type: 'set', path: ref.path, data }); return this; },
+        delete(ref) { ops.push({ type: 'delete', path: ref.path }); return this; },
+        async commit() {
+          for (const op of ops) {
+            if (op.type === 'delete') store.delete(op.path);
+            else store.set(op.path, { ...(store.get(op.path) || {}), ...op.data });
+          }
+        },
+      };
     },
   };
 }
@@ -247,5 +265,47 @@ describe('ensureDefaultPortfolio', () => {
       db._store.get('hackathonMerchantInventory/pricing-user').seededDefaultExpansionVersion,
       5,
     );
+  });
+});
+
+describe('restoreMissingDefaultItems / unlinkWalletInventory', () => {
+  it('restores a demo cert that was overwritten by a personal wallet row', async () => {
+    const db = makeFakeDb();
+    const { wallet: demoW } = await ensureDefaultPortfolio('unlink-user', db);
+    const realW = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+    const collided = DEFAULT_PORTFOLIO_ITEMS[0].cert;
+
+    // Personal scan overwrote the demo doc for this cert.
+    db._store.set(`hackathonMerchantInventory/unlink-user/items/${collided}`, {
+      cert: collided,
+      wallet: realW,
+      name: 'personal',
+      status: 'active',
+    });
+    db._store.set('hackathonMerchantInventory/unlink-user/items/PERSONALONLY1', {
+      cert: 'PERSONALONLY1',
+      wallet: realW,
+      name: 'only-mine',
+      status: 'active',
+    });
+
+    const result = await unlinkWalletInventory('unlink-user', realW, db);
+    assert.equal(result.removed, 2);
+    assert.ok(result.restored >= 1);
+    assert.equal(
+      db._store.get(`hackathonMerchantInventory/unlink-user/items/${collided}`).wallet,
+      demoW,
+    );
+    assert.equal(
+      db._store.has('hackathonMerchantInventory/unlink-user/items/PERSONALONLY1'),
+      false,
+    );
+  });
+
+  it('restoreMissingDefaultItems is a no-op when every seed cert is present', async () => {
+    const db = makeFakeDb();
+    await ensureDefaultPortfolio('full-user', db);
+    const again = await restoreMissingDefaultItems('full-user', db);
+    assert.equal(again.restored, 0);
   });
 });

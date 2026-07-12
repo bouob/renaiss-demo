@@ -8,7 +8,10 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
-import { ensureDefaultPortfolio } from '../services/defaultPortfolio.js';
+import {
+  ensureDefaultPortfolio,
+  unlinkWalletInventory,
+} from '../services/defaultPortfolio.js';
 import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
 
 const router = Router();
@@ -54,7 +57,13 @@ router.get('/meta', requireAuth, async (req, res) => {
     const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
     const items = selectInventoryItems(rows, walletFilter, defaultWallet);
     rememberHeldCerts(items.map((i) => i.cert || i.id));
-    return res.json({ items, uid: req.uid, wallet: walletFilter });
+    return res.json({
+      items,
+      uid: req.uid,
+      wallet: walletFilter,
+      // Synthetic seed wallet — client uses this to chip/filter demo rows.
+      defaultWallet,
+    });
   } catch (err) {
     console.warn(`[meta:get] ${err?.message ?? err}`);
     return res.status(500).json({ error: 'meta_read_failed', items: [] });
@@ -129,6 +138,28 @@ router.post('/meta/bulk', requireAuth, async (req, res) => {
   } catch (err) {
     console.warn(`[meta:bulk] ${err?.message ?? err}`);
     return res.status(500).json({ error: 'meta_bulk_failed', accepted: 0, rejected: [] });
+  }
+});
+
+/**
+ * POST /meta/unlink-wallet — remove personal holdings for a wallet and restore
+ * any demo seed certs that were overwritten by cert collisions.
+ * Body: { wallet: "0x…" }
+ */
+router.post('/meta/unlink-wallet', requireAuth, async (req, res) => {
+  try {
+    if (!adminDb) {
+      return res.status(503).json({ error: 'store_unavailable' });
+    }
+    const wallet = sanitizeWallet(req.body?.wallet);
+    if (!wallet) {
+      return res.status(400).json({ error: 'invalid_wallet' });
+    }
+    const result = await unlinkWalletInventory(req.uid, wallet);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.warn(`[meta:unlink-wallet] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'unlink_failed' });
   }
 });
 

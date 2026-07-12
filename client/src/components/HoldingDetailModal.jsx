@@ -21,6 +21,7 @@ export default function HoldingDetailModal({
   getToken,
   user,
   wallet,
+  defaultWallet = null,
 }) {
   const { t, i18n } = useTranslation();
   const [series, setSeries] = useState(item?.series30d ?? []);
@@ -294,7 +295,9 @@ export default function HoldingDetailModal({
                 <span className="chip">{t(`costSource.${item.costSource}`, { defaultValue: item.costSource })}</span>
               )}
             </div>
-            {provenanceLabel(item, t) && <p className="small muted">{provenanceLabel(item, t)}</p>}
+            {provenanceLabel(item, t, { defaultWallet }) && (
+              <p className="small muted">{provenanceLabel(item, t, { defaultWallet })}</p>
+            )}
 
             <div className="stat-grid">
               <div className="stat-cell">
