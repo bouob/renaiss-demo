@@ -369,6 +369,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     try { const res = await fetchCard(cert, { series: true }); if (!res?.found) { setStageError(t('inventory.certNotFound')); return; } stageMany([{ cert: res.cert, name: res.brief?.name ?? null, setName: res.brief?.setName ?? null, grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null, imageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, indexImageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, priceUsdCents: res.fmv?.priceUsdCents ?? res.brief?.priceUsdCents ?? null, href: res.fmv?.href ?? res.brief?.href ?? null, series30d: res.series30d ?? [], returnPct30d: res.returnPct30d ?? null, status: 'active', qty: 1, cost: null, costSource: 'manual', addedVia: 'cert', createdAt: new Date().toISOString() }]); setCertInput(''); } catch (err) { setStageError(err?.message ?? t('inventory.certFailed')); } finally { setStageBusy(false); }
   }
   function loadCsv(file) { if (!file) return; const reader = new FileReader(); reader.onload = () => { const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? '')); setStageError(rejected.length ? t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }) : null); const now = new Date().toISOString(); stageMany(accepted.map((row) => ({ ...row, addedVia: 'csv', createdAt: now }))); }; reader.readAsText(file); }
+  async function confirmStaged() {
+    if (!staged.length) return; setStageBusy(true); setStageError(null);
+    try {
+      if (user) { await withAuth(async (token) => { await persistBulk(staged, token, null); const byWallet = stagedSales.reduce((m, s) => { const w = s.wallet || ''; (m[w] ||= []).push(s); return m; }, {}); for (const [w, rows] of Object.entries(byWallet)) if (w) await bulkSales(rows, w, { authToken: token }); }); await loadInventory(); }
+      else setItems((prev) => { const byCert = new Map(prev.map((p) => [String(p.cert || p.id), p])); for (const r of staged) byCert.set(String(r.cert), { ...byCert.get(String(r.cert)), ...r }); return [...byCert.values()]; });
+      setCsvNote(t('inventory.confirmSaved', { count: staged.length }) + (user ? '' : ` ${t('inventory.guestConfirmNote')}`)); closeAddPanel();
+    } catch (err) { setStageError(err?.message ?? t('inventory.csvFailed')); } finally { setStageBusy(false); }
+  }
 
   async function handleScan(e) {
     e.preventDefault();
@@ -735,7 +743,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <p className="small">{t(`inventory.${addMethod}AddHint`)}</p>{stageError && <p className="small" style={{ color: 'var(--clear)' }}>{stageError}</p>}
           <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
           {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(Number.isFinite(r.priceUsdCents) ? r.priceUsdCents / 100 : null)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
-          {/* Confirm/Discard footer added in Task 7 */}
+          <div className="modal-actions" style={{ marginTop: '.8rem' }}><button type="button" className="btn btn-ghost btn-sm" onClick={closeAddPanel}>{t('inventory.discard')}</button><button type="button" className="btn btn-primary" disabled={stageBusy || staged.length === 0} onClick={confirmStaged}>{t('inventory.confirmAdd', { count: staged.length })}</button></div>
         </section>
       )}
 
