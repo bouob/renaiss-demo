@@ -2,24 +2,35 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { fetchWall } from '../lib/wallApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
-import { fetchTicker } from '../lib/inventoryApi.js';
+import { fetchMeta, fetchTicker } from '../lib/inventoryApi.js';
 import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
+import { readLastWallet } from '../lib/lastWallet.js';
 import MoversList from '../components/MoversList.jsx';
-import CardRowLink from '../components/CardRowLink.jsx';
-import IndexTile from '../components/IndexTile.jsx';
+import InfoHint from '../components/InfoHint.jsx';
+import BenchmarkPanel from '../components/BenchmarkPanel.jsx';
+import TopBoardGallery from '../components/TopBoardGallery.jsx';
 
-function formatPct(decimal) {
-  if (!Number.isFinite(decimal)) return '—';
-  const pct = decimal * 100;
-  const sign = pct > 0 ? '+' : '';
-  return `${sign}${pct.toFixed(2)}%`;
+function moverMatchesInventory(mover, items) {
+  const moverName = mover?.name ? String(mover.name).toLowerCase() : '';
+  const moverSlug = mover?.slug || '';
+  const moverHref = mover?.href || '';
+  return items.some((item) => {
+    const itemName = item?.name ? String(item.name).toLowerCase() : '';
+    const itemSlug = typeof item?.href === 'string' && item.href.startsWith('/card/')
+      ? item.href.slice('/card/'.length)
+      : '';
+    return (moverName && itemName === moverName)
+      || (moverSlug && itemSlug === moverSlug)
+      || (moverHref && item?.href === moverHref);
+  });
 }
 
-export default function Dashboard() {
+export default function Dashboard({ user, getToken }) {
   const { t, i18n } = useTranslation();
   const [wall, setWall] = useState(null);
   const [movers, setMovers] = useState([]);
+  const [inventoryItems, setInventoryItems] = useState([]);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -48,12 +59,30 @@ export default function Dashboard() {
     return () => { cancelled = true; };
   }, [t]);
 
+  useEffect(() => {
+    let cancelled = false;
+    if (!user) {
+      setInventoryItems([]);
+      return undefined;
+    }
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const wallet = readLastWallet();
+        const metaRes = await fetchMeta({ authToken: token, wallet: wallet || undefined });
+        if (!cancelled) setInventoryItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+      } catch {
+        if (!cancelled) setInventoryItems([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user, getToken]);
+
   const index = wall;
   const top10 = index?.top10 ?? index?.topMovers ?? [];
   const indexHomeUrl = index?.attributionUrl || RENAISS_INDEX_BASE_URL;
-  const promoteCount = movers.filter((m) => m.decision === 'promote').length;
-  const clearCount = movers.filter((m) => m.decision === 'clear').length;
-  const holdCount = movers.filter((m) => m.decision === 'hold' || !m.decision).length;
+  const inventoryMovers = movers.filter((m) => moverMatchesInventory(m, inventoryItems));
   const dateLocale = i18n.language === 'ja' ? 'ja-JP' : i18n.language === 'zh-TW' ? 'zh-TW' : 'en-US';
 
   return (
@@ -64,22 +93,6 @@ export default function Dashboard() {
           <h1 className="h1">{t('dashboard.title')}</h1>
           <p className="muted">{linkDokipokiMentions(t('dashboard.subtitle'))}</p>
         </div>
-        {!loading && movers.length > 0 && (
-          <div className="hero-stats" aria-label="Decision summary">
-            <div className="hero-stat">
-              <span className="badge promote">{t('dashboard.summaryPromote')}</span>
-              <strong>{promoteCount}</strong>
-            </div>
-            <div className="hero-stat">
-              <span className="badge hold">{t('dashboard.summaryHold')}</span>
-              <strong>{holdCount}</strong>
-            </div>
-            <div className="hero-stat">
-              <span className="badge clear">{t('dashboard.summaryClear')}</span>
-              <strong>{clearCount}</strong>
-            </div>
-          </div>
-        )}
       </header>
 
       {loading && <div className="empty">{t('dashboard.loading')}</div>}
@@ -130,53 +143,41 @@ export default function Dashboard() {
             </section>
           )}
 
-          <section className="grid-2">
-            <div className="glass-card">
-              <IndexTile index={index} dateLocale={dateLocale} />
+          <div className="dashboard-layout">
+            <div className="dashboard-left-column">
+              <section className="glass-card dashboard-index-card">
+                <BenchmarkPanel index={index} user={user} getToken={getToken} dateLocale={dateLocale} />
+              </section>
+
+              <section className="glass-card dashboard-top-card">
+                <div className="index-tile-head">
+                  <p className="label" style={{ margin: 0 }}>{t('index.top10')}</p>
+                  <span className="small">{t('index.tapToIndex')}</span>
+                </div>
+                <TopBoardGallery cards={top10.slice(0, 10)} />
+              </section>
             </div>
 
-            <div className="glass-card">
-              <div className="index-tile-head">
-                <p className="label" style={{ margin: 0 }}>{t('index.top10')}</p>
-                <span className="small">{t('index.tapToIndex')}</span>
+            <section className="glass-card dashboard-movers-section">
+              <div className="index-tile-head" style={{ marginBottom: '0.5rem' }}>
+                <p className="label" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</p>
+                <InfoHint label={t('dashboard.moversHint')} />
               </div>
-              {top10.length === 0 ? (
-                <div className="empty">{t('dashboard.top10Empty')}</div>
-              ) : (
-                <ul className="list list-compact">
-                  {top10.slice(0, 8).map((c, i) => (
-                    <li key={c.href || `${c.name}-${i}`}>
-                      <CardRowLink
-                        href={c.href}
-                        name={c.name}
-                        meta={[c.setCode || c.setName, c.grade, c.cardNumber].filter(Boolean).join(' · ')}
-                        trailing={(
-                          <span className={`chip ${Number.isFinite(c.deltaPct) && c.deltaPct < 0 ? 'neg' : 'pos'}`}>
-                            {formatPct(c.deltaPct)}
-                          </span>
-                        )}
-                        thumb={c.imageUrlThumb || c.imageUrl || null}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-          </section>
+              {!loading && <MoversList movers={inventoryMovers} />}
+            </section>
+          </div>
         </>
       )}
 
-      <section>
-        <div className="index-tile-head" style={{ marginBottom: '0.5rem' }}>
-          <div>
-            <h2 className="section-title" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</h2>
-            <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-              {t('dashboard.moversHint')}
-            </p>
+      {(!loading && !index) && (
+        <section>
+          <div className="index-tile-head" style={{ marginBottom: '0.5rem' }}>
+            <p className="label" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</p>
+            <InfoHint label={t('dashboard.moversHint')} />
           </div>
-        </div>
-        {!loading && <MoversList movers={movers} />}
-      </section>
+          <MoversList movers={inventoryMovers} />
+        </section>
+      )}
 
       <p className="attr">
         {linkDokipokiMentions(t('index.attribution', { source: t('index.sourceLabel') }))}

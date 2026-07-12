@@ -11,11 +11,13 @@
     "build:client:path": "npm run build --prefix client -- --base /merchant/",
     "build:client:root": "npm run build --prefix client -- --base /",
     "check:server": "npm run check --prefix server",
+    "test:server": "npm test --prefix server",
+    "test:client": "npm test --prefix client",
     "prepare:hosting": "node scripts/prepare-hosting.mjs",
     "build": "npm run build:client && npm run prepare:hosting",
     "build:path": "npm run build:client:path && npm run prepare:hosting",
     "build:root": "npm run build:client:root",
     "deploy:merchant-site": "npm run build:root && npx -y firebase-tools@13 deploy --only hosting:merchant --config firebase.merchant-site.json --project dokipoki-dev --non-interactive",
-    "test:ci": "npm run check:server && npm run build"
+    "test:ci": "npm run check:server && npm run test:server && npm run test:client && npm run build"
   }
 }

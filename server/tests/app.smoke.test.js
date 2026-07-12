@@ -39,4 +39,15 @@ describe('merchant Express app smoke', () => {
     const json = await res.json();
     assert.equal(json.status, 'ok');
   });
+
+  it('GET /api/meta without auth is rejected (route mounted)', async () => {
+    if (!server) {
+      server = await new Promise((resolve) => {
+        const s = app.listen(0, '127.0.0.1', () => resolve(s));
+      });
+    }
+    const { port } = server.address();
+    const res = await fetch(`http://127.0.0.1:${port}/api/meta`);
+    assert.ok([401, 403, 503].includes(res.status), `unexpected status ${res.status}`);
+  });
 });

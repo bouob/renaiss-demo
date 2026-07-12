@@ -58,6 +58,10 @@ jobs:
         working-directory: client
         run: npm ci
 
+      - name: Unit tests (client)
+        working-directory: client
+        run: npm test
+
       - name: Build client (inject VITE_*)
         working-directory: client
         env:

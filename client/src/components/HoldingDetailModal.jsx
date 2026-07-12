@@ -4,6 +4,7 @@ import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
+import { provenanceLabel } from '../lib/provenance.js';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
@@ -185,9 +186,11 @@ export default function HoldingDetailModal({
 
         <div className="modal-body modal-body-detail">
           <div className="modal-art">
-            {item.imageUrl && !artBroken ? (
+            {/* Index art is preferred; rows saved before indexImageUrl existed
+                only carry the persisted chain image. */}
+            {(item.indexImageUrl || item.imageUrl) && !artBroken ? (
               <img
-                src={item.imageUrl}
+                src={item.indexImageUrl || item.imageUrl}
                 alt=""
                 referrerPolicy="no-referrer"
                 onError={() => setArtBroken(true)}
@@ -209,6 +212,7 @@ export default function HoldingDetailModal({
                 <span className="chip">{t(`costSource.${item.costSource}`, { defaultValue: item.costSource })}</span>
               )}
             </div>
+            {provenanceLabel(item, t) && <p className="small muted">{provenanceLabel(item, t)}</p>}
 
             <div className="stat-grid">
               <div className="stat-cell">

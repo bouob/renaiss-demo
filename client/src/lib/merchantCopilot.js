@@ -20,6 +20,20 @@ export const LIQUIDITY_BAND_MID_MIN_SCORE = 35;
  *  thinner liquidity needs a stronger signal before a promote/clear call is trusted. */
 export const MERCHANT_MID_LIQUIDITY_ALPHA_PCT = 0.075;
 
+// Demo-only fallback for the seeded marquee cards. A live mover match always
+// takes precedence in Inventory.jsx, and a signed-in row already carries the
+// alphaPct30d the server persisted — so this only powers guest mode, where
+// there is no Firebase and therefore no server-side seeding.
+//
+// MIRROR of server/services/defaultPortfolioSeed.js (the source of truth).
+// Edit that file first; the client cannot import server code, so the copy is
+// deliberate and server/tests/demoAlphaParity.test.js guards the two.
+export const DEMO_PROMOTE_ALPHA_BY_CERT = Object.freeze({
+  PSA122603338: 0.12, // 25th Anniversary Birthday Pikachu
+  PSA161025105: 0.09, // Umbreon ex
+  PSA151789461: 0.08, // Grey Felt Hat Pikachu
+});
+
 /**
  * Graded liquidity bands (server/scoring/liquidity.js `analysis.scores.liquidity`,
  * 0-100) — single source of truth for the score cutoffs and the alpha

@@ -18,6 +18,7 @@ import metaRouter from './routes/meta.js';
 import tickerRouter from './routes/ticker.js';
 import insightRouter from './routes/insight.js';
 import salesRouter from './routes/sales.js';
+import portfolioSeriesRouter from './routes/portfolioSeries.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -55,6 +56,7 @@ router.use(scanRouter);
 router.use(metaRouter);
 router.use(insightRouter);
 router.use(salesRouter);
+router.use(portfolioSeriesRouter);
 
 app.use('/merchant/api', router);
 app.use('/api', router);
