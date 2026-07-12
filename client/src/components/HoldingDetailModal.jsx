@@ -4,6 +4,7 @@ import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
+import { resolveMarketplaceUrl, openMarketplacePage } from '../lib/renaissMarketplaceUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { provenanceLabel } from '../lib/provenance.js';
 import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
@@ -46,6 +47,14 @@ export default function HoldingDetailModal({
 
   const cert = item?.cert || item?.id;
   const indexUrl = resolveIndexUrl(item?.href);
+  // Marketplace first (renaiss.xyz): identify the card, then link. tokenId
+  // (scan) > cert serial search (?q=) > name+set. Index stays a secondary CTA.
+  const marketUrl = resolveMarketplaceUrl({
+    tokenId: item?.tokenId,
+    cert,
+    name: item?.name,
+    setName: item?.setName,
+  });
   const decision = item?.decision || 'hold';
   const decisionLabel = t(`decision.${decision}`);
 
@@ -187,7 +196,16 @@ export default function HoldingDetailModal({
   const notice = adjacentNotice(related);
 
   function renderNeighbor(n) {
-    const url = resolveIndexUrl(n.href);
+    // Neighbors are already identified by Index brief (name/set/cert). Link to
+    // marketplace with cert as the stable search key — Index API has no tokenId.
+    const market = resolveMarketplaceUrl({
+      tokenId: n.tokenId,
+      cert: n.cert,
+      name: n.name,
+      setName: n.setName,
+    });
+    const indexFallback = resolveIndexUrl(n.href);
+    const url = market || indexFallback;
     const thumb = n.imageUrlThumb || n.imageUrl;
     const name = n.name ?? t('common.card');
     const meta = [n.gradeLabel, n.setName, n.cardNumber].filter(Boolean).join(' · ')
@@ -242,7 +260,10 @@ export default function HoldingDetailModal({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={(e) => openIndexPage(n.href, e)}
+        onClick={(e) => {
+          if (market) openMarketplacePage({ tokenId: n.tokenId, cert: n.cert, name: n.name, setName: n.setName }, e);
+          else openIndexPage(n.href, e);
+        }}
       >
         {body}
       </a>
@@ -414,6 +435,20 @@ export default function HoldingDetailModal({
               <button type="button" className="btn btn-danger btn-sm" onClick={() => onUpdateStatus?.(cert, 'sold')}>
                 {t('detail.sold')}
               </button>
+              {marketUrl && (
+                <button
+                  type="button"
+                  className="btn btn-primary btn-sm"
+                  onClick={(e) => openMarketplacePage({
+                    tokenId: item?.tokenId,
+                    cert,
+                    name: item?.name,
+                    setName: item?.setName,
+                  }, e)}
+                >
+                  {t('detail.renaissMarket')}
+                </button>
+              )}
               {indexUrl && (
                 <button
                   type="button"

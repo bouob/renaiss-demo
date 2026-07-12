@@ -253,12 +253,15 @@
     "aiFailed": "Couldn't generate advice. Please try again.",
     "aiErrors": {
       "unavailable": "AI advice is temporarily unavailable. Please try again in a few minutes.",
+      "upstream": "The AI service rejected this request. Please try again in a moment.",
+      "invalidOutput": "The AI returned an unreadable answer. Please try again.",
       "quota": "You've used today's AI advice quota. It resets tomorrow.",
       "rateLimited": "Too many requests. Wait a moment and try again.",
       "notOwned": "AI advice is only available for cards in your inventory.",
       "invalidCert": "This certification number isn't valid.",
       "timeout": "The request took too long. Please try again."
     },
+    "renaissMarket": "Renaiss ↗",
     "aiFromCache": "From cache",
     "aiFresh": "Freshly generated",
     "aiRefresh": "Regenerate (uses daily quota)",

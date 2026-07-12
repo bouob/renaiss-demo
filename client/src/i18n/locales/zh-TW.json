@@ -250,12 +250,15 @@
     "aiFailed": "建議產生失敗，請再試一次。",
     "aiErrors": {
       "unavailable": "AI 建議暫時無法使用，請幾分鐘後再試。",
+      "upstream": "AI 服務拒絕了這次請求，請稍後再試。",
+      "invalidOutput": "AI 回傳格式無法解析，請再試一次。",
       "quota": "今日 AI 建議額度已用完，明天重置。",
       "rateLimited": "請求過於頻繁，稍候再試。",
       "notOwned": "只有你庫存中的卡片才能產生 AI 建議。",
       "invalidCert": "此鑑定序號無效。",
       "timeout": "請求逾時，請再試一次。"
     },
+    "renaissMarket": "Renaiss ↗",
     "aiFromCache": "來自快取",
     "aiFresh": "剛產生",
     "aiRefresh": "重新產生（消耗每日額度）",

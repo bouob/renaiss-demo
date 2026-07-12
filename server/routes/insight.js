@@ -127,8 +127,11 @@ router.post('/insight/merchant', requireAuth, insightLimiter, async (req, res) =
       return res.status(503).json({ error: 'gemini_unconfigured' });
     }
 
-    const usage = await checkAndIncrementUsage(req.uid);
-    if (!usage.allowed) {
+    // Gate on peek only — charge the daily quota AFTER a successful generate.
+    // Charging first burned a slot on every gemini_upstream / invalid_output
+    // failure, which made retries feel worse and hid the real error as quota.
+    const usagePeek = await peekUsage(req.uid);
+    if (usagePeek.count >= usagePeek.limit) {
       if (cached.hit === 'stale' && cached.content) {
         const content = pickLocaleContent(cached.content, locale) || cached.content.en;
         return res.json({
@@ -138,20 +141,23 @@ router.post('/insight/merchant', requireAuth, insightLimiter, async (req, res) =
           fallbackSource: 'stale_cache_quota',
           cacheAgeMs: cached.ageMs,
           hardTtlMs: HARD_TTL_MS,
-          usage,
+          usage: usagePeek,
         });
       }
       return res.status(429).json({
         error: 'quota_exceeded',
         mode: 'daily',
-        limit: usage.limit,
-        count: usage.count,
-        day: usage.day,
+        limit: usagePeek.limit,
+        count: usagePeek.count,
+        day: usagePeek.day,
       });
     }
 
     try {
       const validated = await generateMerchantVerdict(cardMeta, merchantContext);
+      const usage = await checkAndIncrementUsage(req.uid);
+      // Race under concurrency can still refuse here; keep the verdict (cache it)
+      // so the user isn't charged for a lost response.
       await writeMerchantCache(req.uid, cert, validated, {
         decision: merchantContext.decision,
         locale,
@@ -161,7 +167,9 @@ router.post('/insight/merchant', requireAuth, insightLimiter, async (req, res) =
         locale,
         content,
         fromCache: false,
-        usage,
+        usage: usage.allowed
+          ? usage
+          : { ...usagePeek, count: usagePeek.count + 1 },
       });
     } catch (genErr) {
       // genErr.detail carries the upstream response body (truncated) — without
