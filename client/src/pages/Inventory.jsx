@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { BadgeCheck, ScanLine, Upload } from 'lucide-react';
 import {
   fetchMeta,
   putMeta,
@@ -20,11 +21,21 @@ import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
 const PAGE_SIZE = 50;
-const LAST_WALLET_KEY = 'merchant_last_wallet';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
   return `$${n.toFixed(2)}`;
+}
+
+export function provenanceLabel(item, t) {
+  const date = item?.createdAt ? new Date(item.createdAt).toLocaleDateString() : '';
+  const wallet = item?.sourceWallet ? `${item.sourceWallet.slice(0, 6)}…${item.sourceWallet.slice(-4)}` : '';
+  switch (item?.addedVia) {
+    case 'scan': return t('inventory.provenanceScan', { wallet, date });
+    case 'cert': return t('inventory.provenanceCert', { date });
+    case 'csv': return t('inventory.provenanceCsv', { date });
+    default: return item?.createdAt ? t('inventory.provenanceUnknown', { date }) : '';
+  }
 }
 
 function suggestedSell(item) {
@@ -73,35 +84,22 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [movers, setMovers] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [wallet, setWallet] = useState(() => {
-    try {
-      return normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
-    } catch {
-      return '';
-    }
-  });
-  /** Last wallet that successfully loaded inventory (empty = no data shown). */
-  const [boundWallet, setBoundWallet] = useState('');
-  const [manualCert, setManualCert] = useState('');
-  const [busy, setBusy] = useState(null);
   const [csvNote, setCsvNote] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addMethod, setAddMethod] = useState(null);
+  const [staged, setStaged] = useState([]);
+  const [stagedSales, setStagedSales] = useState([]);
+  const [stageBusy, setStageBusy] = useState(false);
+  const [stageError, setStageError] = useState(null);
+  const [scanAddr, setScanAddr] = useState('');
+  const [certInput, setCertInput] = useState('');
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
   const [sales, setSales] = useState([]);
   const [salesSummary, setSalesSummary] = useState(null);
   const [showSales, setShowSales] = useState(false);
-  const [defaultTried, setDefaultTried] = useState(false);
 
-  function rememberWallet(addr) {
-    const w = normalizeWallet(addr);
-    if (!w) return;
-    try {
-      localStorage.setItem(LAST_WALLET_KEY, w);
-    } catch { /* ignore */ }
-  }
-
-  // Market movers only — never auto-load inventory without a wallet.
   const loadMovers = useCallback(async () => {
     try {
       const moversRes = await fetchMovers().catch(() => ({ movers: [] }));
@@ -115,11 +113,31 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     loadMovers();
   }, [loadMovers]);
 
+  const loadInventory = useCallback(async () => {
+    if (!user) { setItems([]); setSales([]); setSalesSummary(null); return; }
+    setLoading(true); setError(null);
+    try {
+      const token = await getToken();
+      if (!token) { setItems([]); return; }
+      const [metaRes, salesRes] = await Promise.all([
+        fetchMeta({ authToken: token }),
+        fetchSales({ authToken: token }).catch(() => ({ sales: [], summary: null })),
+      ]);
+      setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+      setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
+      setSalesSummary(salesRes?.summary ?? null);
+    } catch (err) {
+      setError(err?.message ?? t('inventory.loadFailed'));
+      setItems([]); setSales([]); setSalesSummary(null);
+    } finally { setLoading(false); }
+  }, [user, getToken, t]);
+
+  useEffect(() => { loadInventory(); }, [loadInventory]);
+
   // Sign-out / auth drop: wipe inventory UI (do not keep previous wallet cards).
   useEffect(() => {
     if (!user) {
       setItems([]);
-      setBoundWallet('');
       setSelectedCert(null);
       setCsvNote(null);
       setPage(1);
@@ -127,37 +145,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSales([]);
       setSalesSummary(null);
       setShowSales(false);
-      setDefaultTried(false);
     }
   }, [user]);
 
-  // Restore a saved wallet when available. If it has no saved rows, discover
-  // and bind the server-seeded default portfolio so existing users also see
-  // the one-time expansion without manually entering a wallet.
-  useEffect(() => {
-    if (!user || defaultTried || boundWallet) return;
-    let stored = '';
-    try {
-      stored = normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
-    } catch { /* ignore */ }
-    setDefaultTried(true);
-    (async () => {
-      try {
-        const token = await getToken();
-        if (!token) return;
-        if (stored) {
-          const saved = await fetchMeta({ authToken: token, wallet: stored });
-          if (Array.isArray(saved?.items) && saved.items.length > 0) {
-            await loadWalletInventory(stored, { quiet: true });
-            return;
-          }
-        }
-        const res = await fetchMeta({ authToken: token });
-        const discovered = normalizeWallet(res?.wallet || '');
-        if (discovered) await loadWalletInventory(discovered, { quiet: true });
-      } catch { /* fail open — merchant can still load manually */ }
-    })();
-  }, [user, defaultTried, boundWallet, getToken]);
 
   // Reset page when filter / inventory length changes
   useEffect(() => {
@@ -169,7 +159,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     if (!item?.cert) return;
     await putMeta({
       ...item,
-      wallet: walletAddr,
+      wallet: walletAddr ?? item.wallet ?? null,
       status: item.status || 'active',
       qty: item.qty ?? 1,
     }, { authToken: token });
@@ -180,7 +170,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       .filter((h) => h?.cert)
       .map((h) => ({
         ...h,
-        wallet: walletAddr,
+        wallet: walletAddr ?? h.wallet ?? null,
         status: h.status || 'active',
         qty: h.qty ?? 1,
       }));
@@ -191,8 +181,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  /** Load saved meta + sales (no chain scan). Signed-in only. */
-  async function loadWalletInventory(walletAddr, { quiet } = {}) {
+  // Legacy wallet-bound handlers retained temporarily during refactor.
+  if (false) {
+  async function legacyLoadWalletInventory(walletAddr, { quiet } = {}) {
     const addr = normalizeWallet(walletAddr);
     if (!addr) {
       setItems([]);
@@ -240,7 +231,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSalesSummary(salesRes?.summary ?? null);
       setBoundWallet(addr);
       setWallet(addr);
-      rememberWallet(addr);
+      legacyRememberWallet(addr);
       if (!quiet) {
         const saleN = salesRes?.summary?.count ?? (salesRes?.sales?.length || 0);
         setCsvNote(t('inventory.loadOkSales', {
@@ -268,10 +259,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
     setBusy('load');
     try {
-      await loadWalletInventory(addr);
+      await legacyLoadWalletInventory(addr);
     } finally {
       setBusy(null);
     }
+  }
+
   }
 
   const onBoard = useMemo(() => {
@@ -374,7 +367,30 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     return fn(token);
   }
 
-  async function handleScan(e) {
+  const savedCerts = useMemo(() => new Set(items.map((i) => String(i.cert || i.id))), [items]);
+  function stageMany(list) { setStaged((prev) => { const byCert = new Map(prev.map((r) => [String(r.cert), r])); for (const row of list) if (row?.cert) byCert.set(String(row.cert), { ...byCert.get(String(row.cert)), ...row }); return [...byCert.values()]; }); }
+  function removeStaged(cert) { setStaged((prev) => prev.filter((r) => String(r.cert) !== String(cert))); }
+  function closeAddPanel() { setAddMethod(null); setStaged([]); setStagedSales([]); setStageError(null); setScanAddr(''); setCertInput(''); }
+  async function loadScan() {
+    const addr = normalizeWallet(scanAddr); if (!addr) { setStageError(t('inventory.walletInvalid')); return; }
+    setStageBusy(true); setStageError(null);
+    try { const res = await scanWallet(addr); const now = new Date().toISOString(); stageMany((res?.holdings ?? []).map((h) => ({ cert: h.serial || h.tokenId, name: h.name ?? null, setName: h.setName ?? null, grade: h.grade ?? null, imageUrl: h.imageUrl ?? null, indexImageUrl: h.indexImageUrl ?? null, priceUsdCents: h.renaissFmv?.priceUsdCents ?? null, href: h.renaissFmv?.href ?? null, onChainCostUsd: Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null, cost: Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null, acquireType: h.acquireType ?? null, costSource: h.costSource ?? null, status: 'active', qty: 1, wallet: addr, addedVia: 'scan', sourceWallet: addr, createdAt: now })).filter((r) => r.cert)); setStagedSales((prev) => [...prev, ...(Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [])]); } catch (err) { setStageError(err?.message ?? t('inventory.scanFailed')); } finally { setStageBusy(false); }
+  }
+  async function loadCert() {
+    const cert = certInput.trim(); if (!cert) return; setStageBusy(true); setStageError(null);
+    try { const res = await fetchCard(cert, { series: true }); if (!res?.found) { setStageError(t('inventory.certNotFound')); return; } stageMany([{ cert: res.cert, name: res.brief?.name ?? null, setName: res.brief?.setName ?? null, grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null, imageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, indexImageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, priceUsdCents: res.fmv?.priceUsdCents ?? res.brief?.priceUsdCents ?? null, href: res.fmv?.href ?? res.brief?.href ?? null, series30d: res.series30d ?? [], returnPct30d: res.returnPct30d ?? null, status: 'active', qty: 1, cost: null, costSource: 'manual', addedVia: 'cert', createdAt: new Date().toISOString() }]); setCertInput(''); } catch (err) { setStageError(err?.message ?? t('inventory.certFailed')); } finally { setStageBusy(false); }
+  }
+  function loadCsv(file) { if (!file) return; const reader = new FileReader(); reader.onload = () => { const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? '')); setStageError(rejected.length ? t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }) : null); const now = new Date().toISOString(); stageMany(accepted.map((row) => ({ ...row, addedVia: 'csv', createdAt: now }))); }; reader.readAsText(file); }
+  async function confirmStaged() {
+    if (!staged.length) return; setStageBusy(true); setStageError(null);
+    try {
+      if (user) { await withAuth(async (token) => { await persistBulk(staged, token, null); const byWallet = stagedSales.reduce((m, s) => { const w = s.wallet || ''; (m[w] ||= []).push(s); return m; }, {}); for (const [w, rows] of Object.entries(byWallet)) if (w) await bulkSales(rows, w, { authToken: token }); }); await loadInventory(); }
+      else setItems((prev) => { const byCert = new Map(prev.map((p) => [String(p.cert || p.id), p])); for (const r of staged) byCert.set(String(r.cert), { ...byCert.get(String(r.cert)), ...r }); return [...byCert.values()]; });
+      setCsvNote(t('inventory.confirmSaved', { count: staged.length }) + (user ? '' : ` ${t('inventory.guestConfirmNote')}`)); closeAddPanel();
+    } catch (err) { setStageError(err?.message ?? t('inventory.csvFailed')); } finally { setStageBusy(false); }
+  }
+
+  async function legacyScan(e) {
     e.preventDefault();
     const addr = normalizeWallet(wallet);
     if (!addr) {
@@ -431,7 +447,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         };
       });
       setPage(1);
-      setBoundWallet(addr);
       setItems(mapped);
       const saleRows = Array.isArray(res?.sales) ? res.sales : [];
       setSales(saleRows);
@@ -452,7 +467,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           }),
       );
 
-      rememberWallet(addr);
+      legacyRememberWallet(addr);
 
       // Persist only when signed in — backend rows follow uid + wallet.
       if (user) {
@@ -472,9 +487,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  async function handleManualCert(e) {
+  async function legacyManualCert(e) {
     e.preventDefault();
-    if (!boundWallet) {
+    if (!legacyWallet) {
       setError(t('inventory.needWalletFirst'));
       return;
     }
@@ -490,7 +505,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       }
       const item = {
         cert: res.cert,
-        wallet: boundWallet,
+        wallet: legacyWallet,
         name: res.brief?.name ?? null,
         setName: res.brief?.setName ?? null,
         grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null,
@@ -506,15 +521,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         costSource: 'manual',
       };
       if (user) {
-        await withAuth((token) => persistItem(item, token, boundWallet));
-        await loadWalletInventory(boundWallet);
+        await withAuth((token) => persistItem(item, token, legacyWallet));
+        await legacyLoadWalletInventory(legacyWallet);
       } else {
         setItems((prev) => {
           const rest = prev.filter((p) => p.cert !== item.cert);
           return [item, ...rest];
         });
       }
-      setManualCert('');
       setSelectedCert(item.cert);
     } catch (err) {
       setError(err?.message ?? t('inventory.certFailed'));
@@ -528,14 +542,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const next = {
       ...current,
       cert: current.cert || cert,
-      wallet: current.wallet || boundWallet || null,
+      wallet: current.wallet || null,
       status,
       ...extra,
     };
     setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
-    if (user && boundWallet) {
+    if (user) {
       try {
-        await withAuth((token) => persistItem(next, token, boundWallet));
+        await withAuth((token) => persistItem(next, token, null));
       } catch (err) {
         setError(err?.message ?? t('inventory.updateFailed'));
       }
@@ -570,25 +584,25 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const next = {
       ...current,
       cert: current.cert || cert,
-      wallet: current.wallet || boundWallet || null,
+      wallet: current.wallet || null,
       ...patch,
     };
     if (patch.cost !== undefined && patch.costSource == null) {
       next.costSource = 'manual';
     }
     setItems((prev) => prev.map((i) => ((i.cert || i.id) === cert ? { ...i, ...next } : i)));
-    if (user && boundWallet) {
+    if (user) {
       try {
-        await withAuth((token) => persistItem(next, token, boundWallet));
+        await withAuth((token) => persistItem(next, token, null));
       } catch (err) {
         setError(err?.message ?? t('inventory.updateFailed'));
       }
     }
   }
 
-  function handleCsvFile(file) {
+  function legacyCsvFile(file) {
     if (!file) return;
-    if (!boundWallet) {
+    if (!legacyWallet) {
       setError(t('inventory.needWalletFirst'));
       return;
     }
@@ -597,11 +611,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? ''));
       setCsvNote(t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }));
       if (!accepted.length) return;
-      const withWallet = accepted.map((row) => ({ ...row, wallet: boundWallet }));
+      const withWallet = accepted.map((row) => ({ ...row, wallet: legacyWallet }));
       if (user) {
         try {
           await withAuth((token) => bulkMeta(withWallet, { authToken: token }));
-          await loadWalletInventory(boundWallet);
+          await legacyLoadWalletInventory(legacyWallet);
         } catch (err) {
           setError(err?.message ?? t('inventory.csvFailed'));
         }
@@ -636,16 +650,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             {t('inventory.subtitle')}
             {!user && t('inventory.subtitleGuest')}
           </p>
-          {boundWallet ? (
-            <p className="small" style={{ marginTop: '0.45rem' }}>
-              {t('inventory.boundWallet', { wallet: `${boundWallet.slice(0, 6)}…${boundWallet.slice(-4)}` })}
-              {user ? ` · ${t('inventory.boundSaved')}` : ` · ${t('inventory.boundLocal')}`}
-            </p>
-          ) : (
-            <p className="small" style={{ marginTop: '0.45rem' }}>{t('inventory.needWalletHint')}</p>
-          )}
         </div>
-        {(enriched.length > 0 || hasSalesData) && (
+        {!addMethod && (enriched.length > 0 || hasSalesData) && (
           <div className="hero-stats" aria-label="Portfolio snapshot">
             <div className="hero-stat">
               <span className="label">{t('inventory.statsCards')}</span>
@@ -686,8 +692,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
       {error && <div className="empty" style={{ color: 'var(--clear)' }}>{error}</div>}
 
-      <section className="panel-grid">
-        <form className="glass-card" onSubmit={handleScan}>
+      {/* Add controls are rendered by the staged add panel. */}
+      {/* <section className="panel-grid">
+        <form className="glass-card" onSubmit={legacyScan}>
           <p className="label">{t('inventory.walletScan')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto auto', marginBottom: '0.5rem' }}>
             <input
@@ -713,7 +720,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <p className="small">{t('inventory.loadVsScanHint')}</p>
         </form>
 
-        <form className="glass-card" onSubmit={handleManualCert}>
+        <form className="glass-card" onSubmit={legacyManualCert}>
           <p className="label">{t('inventory.manualCert')}</p>
           <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
             <input
@@ -732,12 +739,25 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
       <section className="glass-card">
         <p className="label">{t('inventory.csvImport')}</p>
-        <input type="file" accept=".csv,text/csv" onChange={(e) => handleCsvFile(e.target.files?.[0])} />
+        <input type="file" accept=".csv,text/csv" onChange={(e) => legacyCsvFile(e.target.files?.[0])} />
         <p className="small">{t('inventory.csvHint')} <code>cert</code></p>
         {csvNote && <p className="small">{csvNote}</p>}
-      </section>
+      </section> */}
 
-      {onBoard.length > 0 && (
+      {addMethod && (
+        <section className="glass-card add-panel">
+          <div className="add-panel-head"><p className="label">{t('inventory.addPanelTitle', { method: t(`inventory.method${addMethod[0].toUpperCase()}${addMethod.slice(1)}`) })}</p><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddModal(true)}>{t('inventory.changeMethod')}</button></div>
+          {addMethod === 'scan' && <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}><input className="input" placeholder={t('inventory.walletPlaceholder')} value={scanAddr} onChange={(e) => setScanAddr(e.target.value)} /><button className="btn btn-primary" type="button" disabled={stageBusy || !scanAddr.trim()} onClick={loadScan}>{stageBusy ? t('inventory.scanning') : t('inventory.scan')}</button></div>}
+          {addMethod === 'cert' && <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}><input className="input" placeholder={t('inventory.certPlaceholder')} value={certInput} onChange={(e) => setCertInput(e.target.value)} /><button className="btn btn-primary" type="button" disabled={stageBusy || !certInput.trim()} onClick={loadCert}>{stageBusy ? t('inventory.lookingUp') : t('inventory.add')}</button></div>}
+          {addMethod === 'csv' && <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsv(e.target.files?.[0])} />}
+          <p className="small">{t(`inventory.${addMethod}AddHint`)}</p>{stageError && <p className="small" style={{ color: 'var(--clear)' }}>{stageError}</p>}
+          <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
+          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(Number.isFinite(r.priceUsdCents) ? r.priceUsdCents / 100 : null)}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
+          <div className="modal-actions" style={{ marginTop: '.8rem' }}><button type="button" className="btn btn-ghost btn-sm" onClick={closeAddPanel}>{t('inventory.discard')}</button><button type="button" className="btn btn-primary" disabled={stageBusy || staged.length === 0} onClick={confirmStaged}>{t('inventory.confirmAdd', { count: staged.length })}</button></div>
+        </section>
+      )}
+
+      {!addMethod && onBoard.length > 0 && (
         <section className="glass-card">
           <p className="label">{t('inventory.onBoard', { count: onBoard.length })}</p>
           <div className="chip-row">
@@ -756,17 +776,13 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       )}
 
       {/* ── Inventory grid (Dokipoki-style holdings zone) ── */}
-      <section className="inventory-zone">
+      {!addMethod && <section className="inventory-zone">
         <div className="inventory-zone-head">
           <div>
             <h2 className="section-title">{t('inventory.yourInventory')}</h2>
             <p className="small">
-              {!boundWallet
-                ? t('inventory.emptyUntilWallet')
-                : (loading
-                  ? t('common.loading')
-                  : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length }))}
-              {boundWallet && filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
+              {loading ? t('common.loading') : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length })}
+              {filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
             </p>
           </div>
           <div className="filter-pills" role="tablist" aria-label="Filter holdings">
@@ -782,13 +798,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {f.label}
               </button>
             ))}
+            <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>{t('inventory.addInventory')}</button>
           </div>
         </div>
 
-        {!boundWallet || enriched.length === 0 ? (
-          <div className="empty">
-            {!boundWallet ? t('inventory.emptyUntilWallet') : t('inventory.empty')}
-          </div>
+        {enriched.length === 0 ? (
+          <div className="empty">{t('inventory.emptyInventory')}</div>
         ) : filtered.length === 0 ? (
           <div className="empty">{t('inventory.filterEmpty')}</div>
         ) : (
@@ -804,6 +819,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 const cert = it.cert || it.id;
                 const decision = it.decision || 'hold';
                 const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
+                const imageUrl = it.indexImageUrl || it.imageUrl;
                 return (
                   <button
                     key={cert}
@@ -814,8 +830,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   >
                     <div className="inventory-row-card">
                       <div className="inventory-row-art">
-                        {it.indexImageUrl ? (
-                          <img src={it.indexImageUrl} alt="" loading="lazy" />
+                        {imageUrl ? (
+                          <img src={imageUrl} alt="" loading="lazy" />
                         ) : (
                           <div className="thumb-fallback inventory-row-fallback">{t('common.card')}</div>
                         )}
@@ -865,14 +881,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             )}
           </>
         )}
-      </section>
+      </section>}
 
       {selected && (
         <HoldingDetailModal
           item={selected}
           user={user}
           getToken={getToken}
-          wallet={boundWallet}
+          wallet={selected.wallet || null}
           onClose={() => setSelectedCert(null)}
           onSaveCost={saveCost}
           onSaveDetails={saveDetailsGuarded}
@@ -886,6 +902,19 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           summary={salesSummary}
           onClose={() => setShowSales(false)}
         />
+      )}
+      {showAddModal && (
+        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <p className="label">{t('inventory.addModalTitle')}</p><p className="small">{t('inventory.addModalSubtitle')}</p>
+            <div className="method-grid">{[
+              { id: 'scan', title: t('inventory.methodScan'), desc: t('inventory.methodScanDesc'), Icon: ScanLine },
+              { id: 'cert', title: t('inventory.methodCert'), desc: t('inventory.methodCertDesc'), Icon: BadgeCheck },
+              { id: 'csv', title: t('inventory.methodCsv'), desc: t('inventory.methodCsvDesc'), Icon: Upload },
+            ].map((m) => <button key={m.id} type="button" className="method-card" onClick={() => { setAddMethod(m.id); setShowAddModal(false); }}><m.Icon className="method-card-icon" aria-hidden="true" size={22} /><strong>{m.title}</strong><span className="small">{m.desc}</span></button>)}</div>
+            <div className="modal-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddModal(false)}>{t('common.cancel', { defaultValue: 'Cancel' })}</button></div>
+          </div>
+        </div>
       )}
     </main>
   );

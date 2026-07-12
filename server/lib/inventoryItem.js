@@ -12,11 +12,24 @@ const COST_SOURCES = new Set([
   'manual', 'pack_payment', 'pack_payment_split', 'pack_unmatched',
   'secondary_transfer', 'unavailable', 'buy',
 ]);
+const ADDED_VIA = new Set(['scan', 'cert', 'csv']);
 
 export function sanitizeWallet(v) {
   const w = typeof v === 'string' ? v.trim() : '';
   if (!isValidAddressShape(w)) return null;
   return w.toLowerCase();
+}
+
+/** Filter uid-scoped rows; a wallet filter also retains seeded default cards. */
+export function selectInventoryItems(rows, walletFilter, defaultWallet = null) {
+  const list = Array.isArray(rows) ? rows : [];
+  const w = walletFilter ? String(walletFilter).toLowerCase() : '';
+  if (!w) return list;
+  const dw = defaultWallet ? String(defaultWallet).toLowerCase() : '';
+  return list.filter((row) => {
+    const rw = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
+    return rw === w || (dw && rw === dw);
+  });
 }
 
 function sanitizeString(v, max) {
@@ -57,12 +70,16 @@ export function sanitizeItem(body, cert) {
     costSource,
     onChainCostUsd: sanitizeMoney(body.onChainCostUsd),
     packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
+    addedVia: typeof body.addedVia === 'string' && ADDED_VIA.has(body.addedVia) ? body.addedVia : null,
+    sourceWallet: sanitizeWallet(body.sourceWallet),
     updatedAt: new Date().toISOString(),
   };
   if (patch.acquireType == null) delete patch.acquireType;
   if (patch.costSource == null) delete patch.costSource;
   if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;
   if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
+  if (patch.addedVia == null) delete patch.addedVia;
+  if (patch.sourceWallet == null) delete patch.sourceWallet;
   if (patch.wallet == null) delete patch.wallet;
   return patch;
 }

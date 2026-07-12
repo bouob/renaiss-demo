@@ -125,6 +125,7 @@
     "modalClose": "了解"
   },
   "inventory": {
+    "addInventory": "在庫を追加", "addModalTitle": "在庫を追加", "addModalSubtitle": "カードの追加方法を選択します。確定するまで保存されません。", "methodScan": "ウォレットをスキャン", "methodScanDesc": "アドレスからオンチェーンの鑑定済み保有を取得します。", "methodCert": "証明書番号で追加", "methodCertDesc": "証明書番号で鑑定済みカードを1枚検索します。", "methodCsv": "CSVインポート", "methodCsvDesc": "cert列を含むファイルをアップロードします。", "addPanelTitle": "在庫を追加 · {{method}}", "changeMethod": "方法を変更", "staged": "確認待ち ({{count}})", "stagedEmpty": "上でカードを読み込むと、保存前にここで確認できます。", "stagedDupeInventory": "既に在庫にあります", "stagedDupeStaged": "既に追加済み", "removeStaged": "削除", "confirmAdd": "確定 ({{count}}枚)", "discard": "破棄", "confirmSaved": "{{count}}枚を在庫に追加しました。", "guestConfirmNote": "アカウントに保存するにはサインインしてください。", "scanAddHint": "ウォレットアドレスを入力して鑑定済み保有を取得します。", "certAddHint": "鑑定済みの証明書番号を入力してください。", "csvAddHint": "ヘッダー行にcert列が必要です。", "provenanceScan": "{{wallet}} からスキャン · {{date}}", "provenanceCert": "手動で追加 · {{date}}", "provenanceCsv": "CSVインポート · {{date}}", "provenanceUnknown": "追加 · {{date}}", "emptyInventory": "カードがありません — 「在庫を追加」から始めましょう。",
     "label": "在庫 · 鑑定番号",
     "title": "保有",
     "subtitle": "ウォレット入力後に保有を読み込み。ログイン後のスキャンはアカウント＋そのウォレットで保存。",

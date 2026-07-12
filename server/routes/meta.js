@@ -9,7 +9,7 @@ import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
 import { ensureDefaultPortfolio } from '../services/defaultPortfolio.js';
-import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem } from '../lib/inventoryItem.js';
+import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
 
 const router = Router();
 export { COLLECTION } from '../lib/inventoryItem.js';
@@ -44,26 +44,15 @@ router.get('/meta', requireAuth, async (req, res) => {
       console.warn(`[meta:get] seed skipped: ${err?.message ?? err}`);
       return { wallet: null, seeded: false };
     });
-    const walletFilter = sanitizeWallet(req.query?.wallet) || seed.wallet;
-    if (!walletFilter) {
-      return res.json({ items: [], uid: req.uid, wallet: null, reason: 'wallet_required' });
-    }
-
+    const walletFilter = sanitizeWallet(req.query?.wallet);
     const snap = await adminDb
       .collection(COLLECTION)
       .doc(req.uid)
       .collection('items')
       .get();
-    // Demo default cards live under the account's synthetic default wallet.
-    // Keep them visible when an existing user loads a real wallet; the cert
-    // document is still unique per account, so this does not duplicate tokens.
     const defaultWallet = seed.wallet ? seed.wallet.toLowerCase() : null;
-    const items = snap.docs
-      .map((d) => ({ id: d.id, ...d.data() }))
-      .filter((row) => {
-        const w = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
-        return w === walletFilter || w === defaultWallet;
-      });
+    const rows = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const items = selectInventoryItems(rows, walletFilter, defaultWallet);
     rememberHeldCerts(items.map((i) => i.cert || i.id));
     return res.json({ items, uid: req.uid, wallet: walletFilter });
   } catch (err) {

@@ -125,6 +125,10 @@
     "modalClose": "Got it"
   },
   "inventory": {
+    "addInventory": "Add inventory", "addModalTitle": "Add inventory", "addModalSubtitle": "Choose how to add cards. Nothing is saved until you confirm.",
+    "methodScan": "Scan a wallet", "methodScanDesc": "Pull on-chain graded holdings from an address.", "methodCert": "Add by cert", "methodCertDesc": "Look up one graded card by cert number.", "methodCsv": "Import CSV", "methodCsvDesc": "Upload a file with a cert column.",
+    "addPanelTitle": "Add inventory · {{method}}", "changeMethod": "Change method", "staged": "Staged ({{count}})", "stagedEmpty": "Load cards above — they appear here to review before saving.", "stagedDupeInventory": "Already in inventory", "stagedDupeStaged": "Already staged", "removeStaged": "Remove", "confirmAdd": "Confirm ({{count}} cards)", "discard": "Discard", "confirmSaved": "Added {{count}} cards to your inventory.", "guestConfirmNote": "Sign in to save these to your account.",
+    "scanAddHint": "Enter a wallet address to pull its graded holdings.", "certAddHint": "Enter a graded cert number.", "csvAddHint": "Header row must include a cert column.", "provenanceScan": "Scanned from {{wallet}} · {{date}}", "provenanceCert": "Added manually · {{date}}", "provenanceCsv": "CSV import · {{date}}", "provenanceUnknown": "Added · {{date}}", "emptyInventory": "No cards yet — use Add inventory to get started.",
     "label": "Inventory · graded cert",
     "title": "Holdings",
     "subtitle": "Enter a wallet to load holdings. Signed-in scans save to the backend under your account + that wallet.",
