@@ -3,6 +3,7 @@ import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import Inventory from './pages/Inventory.jsx';
+import RequireAuth from './components/RequireAuth.jsx';
 import {
   auth,
   isFirebaseConfigured,
@@ -51,15 +52,23 @@ export default function App() {
       onSignOut={() => signOutUser()}
     >
       <Routes>
-        <Route path="/" element={<Dashboard />} />
+        <Route path="/" element={<Dashboard user={user} getToken={getToken} />} />
         <Route
           path="/inventory"
           element={(
-            <Inventory
+            <RequireAuth
               user={user}
-              getToken={getToken}
+              authReady={authReady}
               firebaseOk={isFirebaseConfigured}
-            />
+              onSignIn={handleSignIn}
+              authError={authError}
+            >
+              <Inventory
+                user={user}
+                getToken={getToken}
+                firebaseOk={isFirebaseConfigured}
+              />
+            </RequireAuth>
           )}
         />
       </Routes>

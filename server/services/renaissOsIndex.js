@@ -13,6 +13,12 @@
  * failures against one endpoint (e.g. `getIndices`) opens the breaker for
  * every other wrapper in this module, including `getGradedFmv`.
  *
+ * The two graded-lookup wrappers (`getGradedFmv` / `getGradedCardBrief`) sit
+ * behind `getGradedLookupPayload`: an in-memory single-flight map (dedupes the
+ * concurrent pair callers fire for one cert) plus an 8h Firestore cache
+ * (`gradedLookupCache.js`, shared raw payload) so repeat lookups do not re-spend
+ * the daily budget.
+ *
  * Fail-open: every failure mode (missing keys, timeout, non-2xx, quota
  * exhaustion, parse error, open circuit) resolves to `null` — this module
  * never throws. Callers must treat `null` as "no data this round", not as an
@@ -23,6 +29,25 @@
  * circuit breaker that keeps a hanging upstream from stalling every enrich
  * worker for the full 10s timeout, request after request.
  */
+
+import {
+  readCardFmvSeriesCache,
+  writeCardFmvSeriesCache,
+} from './cardFmvSeriesCache.js';
+import {
+  readGradedLookupCache,
+  writeGradedLookupCache,
+} from './gradedLookupCache.js';
+
+// Cache seams for the graded-lookup path — default to the Firestore-backed
+// implementations, swappable in tests via __setCacheForTest.
+let gradedCacheRead = readGradedLookupCache;
+let gradedCacheWrite = writeGradedLookupCache;
+
+// Per warm instance: collapses concurrent lookups of the same cert (e.g. the
+// getGradedFmv + getGradedCardBrief pair callers fire together) into a single
+// upstream request.
+const gradedLookupInFlight = new Map();
 
 const BASE_URL = 'https://api.renaissos.com';
 const REQUEST_TIMEOUT_MS = 10_000;
@@ -320,10 +345,39 @@ export function isConfigured() {
  *   Never throws.
  */
 export async function getGradedFmv(cert) {
-  if (!cert || !CERT_SHAPE.test(String(cert))) return null;
-  const data = await requestUpstreamJson(`/v1/graded/${encodeURIComponent(cert)}`, `getGradedFmv(${cert})`, 'gradedFmv');
+  const data = await getGradedLookupPayload(cert, 'gradedFmv');
   if (!data) return null;
   return mapGradedLookupToFmv(data);
+}
+
+/**
+ * Shared transport for both GET /v1/graded/{cert} wrappers: single-flight
+ * dedupe → Firestore cache read-through → upstream fetch → cache write. Any
+ * successful payload (including `found:false`) is cached; a `null` (failure)
+ * is never cached. Never throws.
+ * @param {string} cert
+ * @param {string} feature - telemetry tag (gradedFmv | gradedCardBrief).
+ * @returns {Promise<object|null>} the raw upstream payload, or null.
+ */
+function getGradedLookupPayload(cert, feature) {
+  if (!cert || !CERT_SHAPE.test(String(cert))) return Promise.resolve(null);
+  const key = String(cert);
+  const existing = gradedLookupInFlight.get(key);
+  if (existing) return existing;
+
+  const promise = (async () => {
+    const cached = await gradedCacheRead(key);
+    if (cached !== null) return cached;
+    const data = await requestUpstreamJson(
+      `/v1/graded/${encodeURIComponent(key)}`,
+      `getGradedLookup(${key})`,
+      feature,
+    );
+    if (data) await gradedCacheWrite(key, data);
+    return data;
+  })();
+  gradedLookupInFlight.set(key, promise);
+  return promise.finally(() => gradedLookupInFlight.delete(key));
 }
 
 // Maps a GradedLookup response onto the display-oriented "card brief" shape
@@ -367,8 +421,7 @@ function mapGradedLookupToCardBrief(data) {
  *   throws.
  */
 export async function getGradedCardBrief(cert) {
-  if (!cert || !CERT_SHAPE.test(String(cert))) return null;
-  const data = await requestUpstreamJson(`/v1/graded/${encodeURIComponent(cert)}`, `getGradedCardBrief(${cert})`, 'gradedCardBrief');
+  const data = await getGradedLookupPayload(cert, 'gradedCardBrief');
   if (!data) return null;
   return mapGradedLookupToCardBrief(data);
 }
@@ -523,10 +576,15 @@ export async function getCardFmvSeries(slug, { window = 30 } = {}) {
     return null;
   }
   const windowParam = Number.isFinite(window) && window > 0 ? Math.trunc(window) : 30;
+  const cached = await readCardFmvSeriesCache(slug, windowParam);
+  if (cached !== null) return cached;
+
   const path = `/v1/cards/${segments.map(encodeURIComponent).join('/')}/fmv-series?window=${windowParam}`;
   const data = await requestUpstreamJson(path, `getCardFmvSeries(${slug})`, 'cardFmvSeries');
   if (!data || !Array.isArray(data.points)) return null;
-  return mapSparklinePoints(data.points);
+  const points = mapSparklinePoints(data.points);
+  await writeCardFmvSeriesCache(slug, windowParam, points);
+  return points;
 }
 
 /** Test-only: resets in-memory quota/disable/breaker state between test cases. */
@@ -539,4 +597,14 @@ export function __resetForTest() {
   consecutiveFailures = 0;
   breakerOpenUntilMs = 0;
   featureBudgetWarnedDateUTC.clear();
+  gradedLookupInFlight.clear();
+}
+
+/**
+ * Test-only: swap the graded-lookup cache implementation. Passing null restores
+ * the default Firestore-backed cache.
+ */
+export function __setCacheForTest(read, write) {
+  gradedCacheRead = read ?? readGradedLookupCache;
+  gradedCacheWrite = write ?? writeGradedLookupCache;
 }

@@ -1,0 +1,68 @@
+/** Shared inventory-item sanitizer and constants. */
+
+import { isValidAddressShape } from './walletGuard.js';
+import { sanitizeMoney, sanitizeQty, sanitizeNonNegInt } from './moneySanitize.js';
+
+export const COLLECTION = 'hackathonMerchantInventory';
+export const CERT_SHAPE = /^[A-Za-z0-9._-]{3,64}$/;
+
+const STATUSES = new Set(['active', 'promoted', 'delisted', 'sold', 'hold', 'clear']);
+const ACQUIRE_TYPES = new Set(['PACK_PULL', 'MINT', 'TRANSFER', 'UNKNOWN', 'PACK_PAYMENT']);
+const COST_SOURCES = new Set([
+  'manual', 'pack_payment', 'pack_payment_split', 'pack_unmatched',
+  'secondary_transfer', 'unavailable', 'buy',
+]);
+
+export function sanitizeWallet(v) {
+  const w = typeof v === 'string' ? v.trim() : '';
+  if (!isValidAddressShape(w)) return null;
+  return w.toLowerCase();
+}
+
+function sanitizeString(v, max) {
+  if (typeof v !== 'string') return null;
+  const s = v.trim().slice(0, max);
+  return s || null;
+}
+
+export function sanitizeItem(body, cert) {
+  const status = typeof body.status === 'string' && STATUSES.has(body.status)
+    ? body.status : 'active';
+  const wallet = sanitizeWallet(body.wallet);
+  const acquireType = typeof body.acquireType === 'string' && ACQUIRE_TYPES.has(body.acquireType)
+    ? body.acquireType : null;
+  const costSource = typeof body.costSource === 'string' && COST_SOURCES.has(body.costSource)
+    ? body.costSource : null;
+  const patch = {
+    cert,
+    wallet,
+    cost: sanitizeMoney(body.cost),
+    listPrice: sanitizeMoney(body.listPrice),
+    qty: sanitizeQty(body.qty),
+    target: sanitizeMoney(body.target),
+    stop: sanitizeMoney(body.stop),
+    status,
+    name: sanitizeString(body.name, 200),
+    setName: sanitizeString(body.setName, 200),
+    grade: sanitizeString(body.grade, 40),
+    imageUrl: sanitizeString(body.imageUrl, 500),
+    priceUsdCents: sanitizeNonNegInt(body.priceUsdCents, { max: 999_999_999 * 100 }),
+    // Optional demo fallback used when the live movers feed is unavailable.
+    alphaPct30d: Number.isFinite(Number(body.alphaPct30d))
+      ? Math.max(-1, Math.min(10, Number(body.alphaPct30d)))
+      : null,
+    href: sanitizeString(body.href, 300),
+    notes: sanitizeString(body.notes, 1000),
+    acquireType,
+    costSource,
+    onChainCostUsd: sanitizeMoney(body.onChainCostUsd),
+    packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
+    updatedAt: new Date().toISOString(),
+  };
+  if (patch.acquireType == null) delete patch.acquireType;
+  if (patch.costSource == null) delete patch.costSource;
+  if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;
+  if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
+  if (patch.wallet == null) delete patch.wallet;
+  return patch;
+}
