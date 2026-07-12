@@ -125,6 +125,7 @@
     "modalClose": "知道了"
   },
   "inventory": {
+    "addInventory": "新增庫存", "addModalTitle": "新增庫存", "addModalSubtitle": "選擇新增卡片的方式。確認前不會儲存。", "methodScan": "掃描錢包", "methodScanDesc": "從地址擷取鏈上鑑定持有。", "methodCert": "以證書號新增", "methodCertDesc": "以證書號查詢單張鑑定卡。", "methodCsv": "匯入 CSV", "methodCsvDesc": "上傳含 cert 欄位的檔案。", "addPanelTitle": "新增庫存 · {{method}}", "changeMethod": "更換方式", "staged": "待確認 ({{count}})", "stagedEmpty": "在上方載入卡片，會顯示於此供儲存前確認。", "stagedDupeInventory": "已在庫存中", "stagedDupeStaged": "已加入待確認", "removeStaged": "移除", "confirmAdd": "確認 ({{count}} 張)", "discard": "捨棄", "confirmSaved": "已將 {{count}} 張加入庫存。", "guestConfirmNote": "登入以儲存到您的帳戶。", "scanAddHint": "輸入錢包地址以擷取其鑑定持有。", "certAddHint": "輸入鑑定證書號。", "csvAddHint": "標題列必須包含 cert 欄位。", "provenanceScan": "掃描自 {{wallet}} · {{date}}", "provenanceCert": "手動新增 · {{date}}", "provenanceCsv": "CSV 匯入 · {{date}}", "provenanceUnknown": "已新增 · {{date}}", "emptyInventory": "尚無卡片 — 使用「新增庫存」開始。",
     "label": "庫存 · 鑑定序號",
     "title": "持倉",
     "subtitle": "輸入錢包後才載入持倉。登入後掃描會寫入後台（帳號 + 該錢包）。",
