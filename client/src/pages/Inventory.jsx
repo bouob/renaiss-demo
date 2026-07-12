@@ -73,6 +73,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [csvNote, setCsvNote] = useState(null);
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addMethod, setAddMethod] = useState(null);
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
@@ -744,6 +746,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {f.label}
               </button>
             ))}
+            <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>{t('inventory.addInventory')}</button>
           </div>
         </div>
 
@@ -846,6 +849,19 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           summary={salesSummary}
           onClose={() => setShowSales(false)}
         />
+      )}
+      {showAddModal && (
+        <div className="modal-backdrop" onClick={() => setShowAddModal(false)}>
+          <div className="modal-card" onClick={(e) => e.stopPropagation()}>
+            <p className="label">{t('inventory.addModalTitle')}</p><p className="small">{t('inventory.addModalSubtitle')}</p>
+            <div className="method-grid">{[
+              { id: 'scan', title: t('inventory.methodScan'), desc: t('inventory.methodScanDesc') },
+              { id: 'cert', title: t('inventory.methodCert'), desc: t('inventory.methodCertDesc') },
+              { id: 'csv', title: t('inventory.methodCsv'), desc: t('inventory.methodCsvDesc') },
+            ].map((m) => <button key={m.id} type="button" className="method-card" onClick={() => { setAddMethod(m.id); setShowAddModal(false); }}><strong>{m.title}</strong><span className="small">{m.desc}</span></button>)}</div>
+            <div className="modal-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowAddModal(false)}>{t('common.cancel', { defaultValue: 'Cancel' })}</button></div>
+          </div>
+        </div>
       )}
     </main>
   );

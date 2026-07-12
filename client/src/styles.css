@@ -1999,3 +1999,7 @@ code {
 .benchmark-vs-pane {
   min-height: 220px;
 }
+.method-grid { display: grid; grid-template-columns: 1fr; gap: .6rem; margin: .8rem 0; }
+.method-card { display: flex; flex-direction: column; gap: .2rem; text-align: left; padding: .8rem 1rem; border: 1px solid var(--border, rgba(255,255,255,.12)); border-radius: 12px; background: transparent; cursor: pointer; }
+.method-card:hover { border-color: var(--accent, #6c8cff); }
+.modal-actions { display: flex; justify-content: flex-end; gap: .5rem; margin-top: .6rem; }
