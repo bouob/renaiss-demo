@@ -7,7 +7,8 @@ import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/r
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 import { readLastWallet } from '../lib/lastWallet.js';
 import MoversList from '../components/MoversList.jsx';
-import IndexTile from '../components/IndexTile.jsx';
+import InfoHint from '../components/InfoHint.jsx';
+import BenchmarkPanel from '../components/BenchmarkPanel.jsx';
 import TopBoardGallery from '../components/TopBoardGallery.jsx';
 
 function moverMatchesInventory(mover, items) {
@@ -145,7 +146,7 @@ export default function Dashboard({ user, getToken }) {
           <div className="dashboard-layout">
             <div className="dashboard-left-column">
               <section className="glass-card dashboard-index-card">
-                <IndexTile index={index} dateLocale={dateLocale} />
+                <BenchmarkPanel index={index} user={user} getToken={getToken} dateLocale={dateLocale} />
               </section>
 
               <section className="glass-card dashboard-top-card">
@@ -159,12 +160,8 @@ export default function Dashboard({ user, getToken }) {
 
             <section className="glass-card dashboard-movers-section">
               <div className="index-tile-head" style={{ marginBottom: '0.5rem' }}>
-                <div>
-                  <h2 className="section-title" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</h2>
-                  <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-                    {t('dashboard.moversHint')}
-                  </p>
-                </div>
+                <p className="label" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</p>
+                <InfoHint label={t('dashboard.moversHint')} />
               </div>
               {!loading && <MoversList movers={inventoryMovers} />}
             </section>
@@ -175,12 +172,8 @@ export default function Dashboard({ user, getToken }) {
       {(!loading && !index) && (
         <section>
           <div className="index-tile-head" style={{ marginBottom: '0.5rem' }}>
-            <div>
-              <h2 className="section-title" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</h2>
-              <p className="muted" style={{ margin: '0.35rem 0 0' }}>
-                {t('dashboard.moversHint')}
-              </p>
-            </div>
+            <p className="label" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</p>
+            <InfoHint label={t('dashboard.moversHint')} />
           </div>
           <MoversList movers={inventoryMovers} />
         </section>

@@ -884,6 +884,67 @@ a:hover {
   margin-bottom: 0.35rem;
 }
 
+.info-hint {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--glass-border);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  font-style: italic;
+  line-height: 1;
+  cursor: help;
+  transition: color 0.18s var(--ease), border-color 0.18s var(--ease);
+}
+.info-hint:hover,
+.info-hint:focus-visible {
+  color: var(--neon-cyan);
+  border-color: var(--glass-border-hover);
+  outline: none;
+}
+.info-hint::after {
+  content: attr(data-tip);
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  width: max-content;
+  max-width: 260px;
+  padding: 0.55rem 0.7rem;
+  border-radius: var(--radius-md);
+  border: 1px solid var(--glass-border);
+  background: var(--bg-elevated);
+  box-shadow: var(--shadow-card);
+  color: var(--text-secondary);
+  font-family: var(--font-body);
+  font-size: 0.75rem;
+  font-style: normal;
+  font-weight: 400;
+  line-height: 1.45;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  text-align: left;
+  white-space: normal;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-4px);
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease), visibility 0.18s;
+  pointer-events: none;
+  z-index: 30;
+}
+.info-hint:hover::after,
+.info-hint:focus-visible::after {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+}
+
 .attr {
   margin-top: 0.5rem;
   font-size: 0.75rem;
@@ -1909,4 +1970,29 @@ code {
 .benchmark-vs-coverage {
   margin: 0.35rem 0 0;
   opacity: 0.75;
+}
+
+.benchmark-tabs {
+  display: inline-flex;
+  gap: 0.25rem;
+  padding: 0.2rem;
+  margin-bottom: 0.85rem;
+  border-radius: 0.6rem;
+  background: rgba(255, 255, 255, 0.05);
+}
+.benchmark-tab {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: var(--muted, rgba(255, 255, 255, 0.7));
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 0.35rem 0.75rem;
+  border-radius: 0.45rem;
+  cursor: pointer;
+}
+.benchmark-tab.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg, #fff);
 }
