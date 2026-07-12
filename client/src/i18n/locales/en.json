@@ -215,6 +215,8 @@
     "scanOkPrefill": "Scan OK · {{prefill}}/{{total}} pack costs prefilled",
     "scanOk": "Scan OK · {{total}} cards",
     "scanFailed": "Scan failed",
+    "scanEmpty": "No graded holdings or sales found for this wallet.",
+    "scanChainUnconfigured": "On-chain scan is unavailable (BSC RPC not configured). Ops: set BSC_RPC_URL to an Alchemy https://…/v2/… endpoint and redeploy.",
     "certNotFound": "No Renaiss data for this cert (graded-only, no price guess).",
     "certFailed": "Cert lookup failed",
     "loadFailed": "Failed to load inventory",

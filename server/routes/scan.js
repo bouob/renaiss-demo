@@ -52,11 +52,14 @@ router.post('/scan', scanLimiter, async (req, res) => {
     }
 
     if (!isChainConfigured()) {
-      return res.json({
+      // Keep shape compatible with older clients, but mark as a hard failure so
+      // the UI can stop treating this as a successful empty wallet scan.
+      return res.status(503).json({
         address: address.toLowerCase(),
         holdings: [],
         sales: [],
         salesSummary: { count: 0, totalSoldUsd: 0, totalCostUsd: 0, totalRealizedPnlUsd: 0 },
+        error: 'chain_unconfigured',
         warning: 'chain_unconfigured',
       });
     }
