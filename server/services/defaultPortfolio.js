@@ -22,7 +22,12 @@ export async function ensureDefaultPortfolio(uid, db = adminDb) {
   const parentData = parentSnap.exists ? (parentSnap.data() || {}) : {};
   const defaultWallet = parentData.defaultWallet || wallet;
   if (parentData.seededDefaultAt) {
-    if (parentData.seededDefaultExpansionVersion >= DEFAULT_PORTFOLIO_EXPANSION_VERSION) {
+    // Accounts seeded before version tracking have no field at all; `undefined`
+    // compares false against BOTH < and >=, so normalize before either guard.
+    const seededVersion = Number.isFinite(parentData.seededDefaultExpansionVersion)
+      ? parentData.seededDefaultExpansionVersion
+      : 0;
+    if (seededVersion >= DEFAULT_PORTFOLIO_EXPANSION_VERSION) {
       return { wallet: defaultWallet, seeded: false };
     }
     const expansionStart = parentData.seededDefaultExpansionVersion == null
@@ -39,7 +44,7 @@ export async function ensureDefaultPortfolio(uid, db = adminDb) {
       const patch = sanitizeItem({ ...item, wallet: defaultWallet }, item.cert);
       batch.set(ref, { ...patch, createdAt: patch.updatedAt }, { merge: true });
     }
-    if (parentData.seededDefaultExpansionVersion < DEFAULT_PORTFOLIO_EXPANSION_VERSION) {
+    if (seededVersion < DEFAULT_PORTFOLIO_EXPANSION_VERSION) {
       for (const item of DEFAULT_PORTFOLIO_ITEMS) {
         const ref = itemsCol.doc(item.cert);
         const snap = await ref.get();

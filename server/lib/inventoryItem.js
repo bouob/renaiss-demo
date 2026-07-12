@@ -14,6 +14,11 @@ const COST_SOURCES = new Set([
 ]);
 const ADDED_VIA = new Set(['scan', 'cert', 'csv']);
 
+// alphaPct30d is a decimal fraction (0.12 = +12%): floor at a total loss,
+// cap well above any plausible 30d move to reject junk without truncating signal.
+const ALPHA_PCT_MIN = -1;
+const ALPHA_PCT_MAX = 10;
+
 export function sanitizeWallet(v) {
   const w = typeof v === 'string' ? v.trim() : '';
   if (!isValidAddressShape(w)) return null;
@@ -61,8 +66,10 @@ export function sanitizeItem(body, cert) {
     imageUrl: sanitizeString(body.imageUrl, 500),
     priceUsdCents: sanitizeNonNegInt(body.priceUsdCents, { max: 999_999_999 * 100 }),
     // Optional demo fallback used when the live movers feed is unavailable.
-    alphaPct30d: Number.isFinite(Number(body.alphaPct30d))
-      ? Math.max(-1, Math.min(10, Number(body.alphaPct30d)))
+    // Only a real number counts: Number(null) / Number('') are 0, which would
+    // persist a spurious 0 alpha and shadow the nullish demo fallback client-side.
+    alphaPct30d: typeof body.alphaPct30d === 'number' && Number.isFinite(body.alphaPct30d)
+      ? Math.max(ALPHA_PCT_MIN, Math.min(ALPHA_PCT_MAX, body.alphaPct30d))
       : null,
     href: sanitizeString(body.href, 300),
     notes: sanitizeString(body.notes, 1000),
@@ -80,6 +87,7 @@ export function sanitizeItem(body, cert) {
   if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
   if (patch.addedVia == null) delete patch.addedVia;
   if (patch.sourceWallet == null) delete patch.sourceWallet;
+  if (patch.alphaPct30d == null) delete patch.alphaPct30d;
   if (patch.wallet == null) delete patch.wallet;
   return patch;
 }

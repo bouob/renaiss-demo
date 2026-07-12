@@ -133,6 +133,35 @@ describe('ensureDefaultPortfolio', () => {
     );
   });
 
+  it('backfills pricing for a legacy account that has no expansion version at all', async () => {
+    const db = makeFakeDb();
+    const wallet = syntheticWallet('legacy-user');
+    const showcase = DEFAULT_PORTFOLIO_ITEMS.find((item) => item.cert === 'PSA151789461');
+    // Seeded before seededDefaultExpansionVersion existed: the field is absent,
+    // which used to make `undefined < VERSION` false and skip the backfill.
+    db._store.set('hackathonMerchantInventory/legacy-user', {
+      seededDefaultAt: '2026-06-01T00:00:00.000Z',
+      defaultWallet: wallet,
+    });
+    db._store.set(`hackathonMerchantInventory/legacy-user/items/${showcase.cert}`, {
+      cert: showcase.cert,
+      wallet,
+      name: 'User-owned card name',
+    });
+
+    const result = await ensureDefaultPortfolio('legacy-user', db);
+
+    assert.equal(result.seeded, true);
+    const row = db._store.get(`hackathonMerchantInventory/legacy-user/items/${showcase.cert}`);
+    assert.equal(row.name, 'User-owned card name');
+    assert.equal(row.alphaPct30d, showcase.alphaPct30d);
+    assert.equal(row.cost, showcase.cost);
+    assert.equal(
+      db._store.get('hackathonMerchantInventory/legacy-user').seededDefaultExpansionVersion,
+      5,
+    );
+  });
+
   it('adds newer cards once for an account with the prior expansion marker', async () => {
     const db = makeFakeDb();
     const wallet = syntheticWallet('expanded-user');

@@ -28,6 +28,21 @@ describe('inventoryItem shared module', () => {
     assert.ok(!('addedVia' in bad));
     assert.ok(!('sourceWallet' in bad));
   });
+  it('sanitizeItem keeps a numeric alphaPct30d and clamps out-of-range values', () => {
+    assert.equal(sanitizeItem({ alphaPct30d: 0.12 }, 'PSA114662766').alphaPct30d, 0.12);
+    assert.equal(sanitizeItem({ alphaPct30d: 99 }, 'PSA114662766').alphaPct30d, 10);
+    assert.equal(sanitizeItem({ alphaPct30d: -5 }, 'PSA114662766').alphaPct30d, -1);
+  });
+
+  it('sanitizeItem drops a non-numeric alphaPct30d instead of coercing it to 0', () => {
+    // Number(null) and Number('') are both 0 — persisting that would shadow the
+    // nullish demo-alpha fallback and silently reclassify the row.
+    for (const value of [null, '', false, [], 'abc', undefined]) {
+      const patch = sanitizeItem({ alphaPct30d: value }, 'PSA114662766');
+      assert.ok(!('alphaPct30d' in patch), `alphaPct30d should be dropped for ${JSON.stringify(value)}`);
+    }
+  });
+
   it('selectInventoryItems returns all rows when no wallet filter', () => {
     const rows = [{ cert: 'A', wallet: '0xaaa' }, { cert: 'B', wallet: null }];
     assert.deepEqual(selectInventoryItems(rows, null, null).map((r) => r.cert), ['A', 'B']);

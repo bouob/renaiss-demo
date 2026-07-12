@@ -14,3 +14,16 @@ export function readLastWallet() {
     return '';
   }
 }
+
+/**
+ * Record the wallet the user just scanned. BenchmarkPanel reads it back to
+ * scope the inventory-vs-index series, so a scan that does not write here
+ * leaves the Vs tab permanently in its no-wallet state.
+ */
+export function rememberLastWallet(addr) {
+  const wallet = normalizeWallet(addr);
+  if (!wallet) return;
+  try {
+    localStorage.setItem(LAST_WALLET_KEY, wallet);
+  } catch { /* private mode / quota — the Vs tab just stays unscoped */ }
+}

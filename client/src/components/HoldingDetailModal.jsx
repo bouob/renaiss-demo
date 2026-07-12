@@ -186,9 +186,11 @@ export default function HoldingDetailModal({
 
         <div className="modal-body modal-body-detail">
           <div className="modal-art">
-            {item.indexImageUrl && !artBroken ? (
+            {/* Index art is preferred; rows saved before indexImageUrl existed
+                only carry the persisted chain image. */}
+            {(item.indexImageUrl || item.imageUrl) && !artBroken ? (
               <img
-                src={item.indexImageUrl}
+                src={item.indexImageUrl || item.imageUrl}
                 alt=""
                 referrerPolicy="no-referrer"
                 onError={() => setArtBroken(true)}

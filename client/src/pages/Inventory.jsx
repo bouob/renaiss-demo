@@ -17,6 +17,7 @@ import {
 } from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import { parseMoney } from '../lib/moneyInput.js';
+import { normalizeWallet, rememberLastWallet } from '../lib/lastWallet.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
@@ -43,39 +44,6 @@ function suggestedSell(item) {
   if (Number.isFinite(item.priceUsdCents)) return (item.priceUsdCents / 100) * 1.05;
   if (Number.isFinite(item.fmvUsd)) return item.fmvUsd * 1.05;
   return null;
-}
-
-function normalizeWallet(addr) {
-  const w = String(addr ?? '').trim();
-  return /^0x[0-9a-fA-F]{40}$/.test(w) ? w.toLowerCase() : '';
-}
-
-async function hydrateIndexMetadata(rows) {
-  const updates = new Map();
-  const candidates = rows.filter((row) => row?.cert && !row.indexImageUrl);
-  for (let i = 0; i < candidates.length; i += 4) {
-    const batch = candidates.slice(i, i + 4);
-    const results = await Promise.all(batch.map(async (row) => {
-      try {
-        const res = await fetchCard(row.cert);
-        const brief = res?.brief;
-        if (!brief) return null;
-        return {
-          cert: row.cert,
-          name: brief.name ?? row.name ?? null,
-          setName: brief.setName ?? row.setName ?? null,
-          grade: brief.gradeLabel ?? row.grade ?? null,
-          indexImageUrl: brief.imageUrl ?? brief.imageUrlThumb ?? null,
-        };
-      } catch {
-        return null;
-      }
-    }));
-    for (const result of results) {
-      if (result?.cert && result.indexImageUrl) updates.set(String(result.cert), result);
-    }
-  }
-  return updates;
 }
 
 export default function Inventory({ user, getToken, firebaseOk }) {
@@ -181,92 +149,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  // Legacy wallet-bound handlers retained temporarily during refactor.
-  if (false) {
-  async function legacyLoadWalletInventory(walletAddr, { quiet } = {}) {
-    const addr = normalizeWallet(walletAddr);
-    if (!addr) {
-      setItems([]);
-      setBoundWallet('');
-      setSales([]);
-      setSalesSummary(null);
-      return;
-    }
-    if (!user) {
-      setError(t('inventory.needSignInLoad'));
-      return;
-    }
-    setLoading(true);
-    if (!quiet) setError(null);
-    try {
-      const token = await getToken();
-      if (!token) {
-        setItems([]);
-        return;
-      }
-      const [metaRes, salesRes] = await Promise.all([
-        fetchMeta({ authToken: token, wallet: addr }),
-        fetchSales({ authToken: token, wallet: addr }).catch(() => ({ sales: [], summary: null })),
-      ]);
-      const list = Array.isArray(metaRes?.items) ? metaRes.items : [];
-      setItems(list);
-      // Older saved rows may still contain the chain/NFT image. Refresh their
-      // display metadata from the Index so the inventory stays consistent with
-      // newly scanned cards.
-      void hydrateIndexMetadata(list).then(async (updates) => {
-        if (!updates.size) return;
-        const hydrated = list.map((row) => ({
-          ...row,
-          ...(updates.get(String(row.cert)) || {}),
-        }));
-        setItems((current) => current.map((row) => ({
-          ...row,
-          ...(updates.get(String(row.cert)) || {}),
-        })));
-        try {
-          await bulkMeta(hydrated, { authToken: token });
-        } catch { /* keep the refreshed data visible even if persistence fails */ }
-      });
-      setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
-      setSalesSummary(salesRes?.summary ?? null);
-      setBoundWallet(addr);
-      setWallet(addr);
-      legacyRememberWallet(addr);
-      if (!quiet) {
-        const saleN = salesRes?.summary?.count ?? (salesRes?.sales?.length || 0);
-        setCsvNote(t('inventory.loadOkSales', {
-          total: list.length,
-          sales: saleN,
-          defaultValue: t('inventory.loadOk', { total: list.length }),
-        }));
-      }
-    } catch (err) {
-      setError(err?.message ?? t('inventory.loadFailed'));
-      setItems([]);
-      setSales([]);
-      setSalesSummary(null);
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  async function handleLoadSaved(e) {
-    e?.preventDefault?.();
-    const addr = normalizeWallet(wallet);
-    if (!addr) {
-      setError(t('inventory.walletInvalid'));
-      return;
-    }
-    setBusy('load');
-    try {
-      await legacyLoadWalletInventory(addr);
-    } finally {
-      setBusy(null);
-    }
-  }
-
-  }
-
   const onBoard = useMemo(() => {
     const keys = new Set();
     for (const m of movers) {
@@ -368,149 +250,99 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   }
 
   const savedCerts = useMemo(() => new Set(items.map((i) => String(i.cert || i.id))), [items]);
-  function stageMany(list) { setStaged((prev) => { const byCert = new Map(prev.map((r) => [String(r.cert), r])); for (const row of list) if (row?.cert) byCert.set(String(row.cert), { ...byCert.get(String(row.cert)), ...row }); return [...byCert.values()]; }); }
-  function removeStaged(cert) { setStaged((prev) => prev.filter((r) => String(r.cert) !== String(cert))); }
-  function closeAddPanel() { setAddMethod(null); setStaged([]); setStagedSales([]); setStageError(null); setScanAddr(''); setCertInput(''); }
+
+  /** Upsert rows into the staging area, keyed by cert (a re-scan refreshes, never duplicates). */
+  function stageMany(list) {
+    setStaged((prev) => {
+      const byCert = new Map(prev.map((r) => [String(r.cert), r]));
+      for (const row of list) {
+        if (row?.cert) byCert.set(String(row.cert), { ...byCert.get(String(row.cert)), ...row });
+      }
+      return [...byCert.values()];
+    });
+  }
+
+  function removeStaged(cert) {
+    setStaged((prev) => prev.filter((r) => String(r.cert) !== String(cert)));
+  }
+
+  function closeAddPanel() {
+    setAddMethod(null);
+    setStaged([]);
+    setStagedSales([]);
+    setStageError(null);
+    setScanAddr('');
+    setCertInput('');
+  }
+
+  function stagedRowFromHolding(h, wallet, createdAt) {
+    const onChainCostUsd = Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null;
+    return {
+      cert: h.serial || h.tokenId,
+      name: h.name ?? null,
+      setName: h.setName ?? null,
+      grade: h.grade ?? null,
+      imageUrl: h.imageUrl ?? null,
+      indexImageUrl: h.indexImageUrl ?? null,
+      priceUsdCents: h.renaissFmv?.priceUsdCents ?? null,
+      href: h.renaissFmv?.href ?? null,
+      onChainCostUsd,
+      cost: onChainCostUsd,
+      acquireType: h.acquireType ?? null,
+      costSource: h.costSource ?? null,
+      status: 'active',
+      qty: 1,
+      wallet,
+      addedVia: 'scan',
+      sourceWallet: wallet,
+      createdAt,
+    };
+  }
+
   async function loadScan() {
-    const addr = normalizeWallet(scanAddr); if (!addr) { setStageError(t('inventory.walletInvalid')); return; }
-    setStageBusy(true); setStageError(null);
-    try { const res = await scanWallet(addr); const now = new Date().toISOString(); stageMany((res?.holdings ?? []).map((h) => ({ cert: h.serial || h.tokenId, name: h.name ?? null, setName: h.setName ?? null, grade: h.grade ?? null, imageUrl: h.imageUrl ?? null, indexImageUrl: h.indexImageUrl ?? null, priceUsdCents: h.renaissFmv?.priceUsdCents ?? null, href: h.renaissFmv?.href ?? null, onChainCostUsd: Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null, cost: Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null, acquireType: h.acquireType ?? null, costSource: h.costSource ?? null, status: 'active', qty: 1, wallet: addr, addedVia: 'scan', sourceWallet: addr, createdAt: now })).filter((r) => r.cert)); setStagedSales((prev) => [...prev, ...(Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [])]); } catch (err) { setStageError(err?.message ?? t('inventory.scanFailed')); } finally { setStageBusy(false); }
-  }
-  async function loadCert() {
-    const cert = certInput.trim(); if (!cert) return; setStageBusy(true); setStageError(null);
-    try { const res = await fetchCard(cert, { series: true }); if (!res?.found) { setStageError(t('inventory.certNotFound')); return; } stageMany([{ cert: res.cert, name: res.brief?.name ?? null, setName: res.brief?.setName ?? null, grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null, imageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, indexImageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null, priceUsdCents: res.fmv?.priceUsdCents ?? res.brief?.priceUsdCents ?? null, href: res.fmv?.href ?? res.brief?.href ?? null, series30d: res.series30d ?? [], returnPct30d: res.returnPct30d ?? null, status: 'active', qty: 1, cost: null, costSource: 'manual', addedVia: 'cert', createdAt: new Date().toISOString() }]); setCertInput(''); } catch (err) { setStageError(err?.message ?? t('inventory.certFailed')); } finally { setStageBusy(false); }
-  }
-  function loadCsv(file) { if (!file) return; const reader = new FileReader(); reader.onload = () => { const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? '')); setStageError(rejected.length ? t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }) : null); const now = new Date().toISOString(); stageMany(accepted.map((row) => ({ ...row, addedVia: 'csv', createdAt: now }))); }; reader.readAsText(file); }
-  async function confirmStaged() {
-    if (!staged.length) return; setStageBusy(true); setStageError(null);
-    try {
-      if (user) { await withAuth(async (token) => { await persistBulk(staged, token, null); const byWallet = stagedSales.reduce((m, s) => { const w = s.wallet || ''; (m[w] ||= []).push(s); return m; }, {}); for (const [w, rows] of Object.entries(byWallet)) if (w) await bulkSales(rows, w, { authToken: token }); }); await loadInventory(); }
-      else setItems((prev) => { const byCert = new Map(prev.map((p) => [String(p.cert || p.id), p])); for (const r of staged) byCert.set(String(r.cert), { ...byCert.get(String(r.cert)), ...r }); return [...byCert.values()]; });
-      setCsvNote(t('inventory.confirmSaved', { count: staged.length }) + (user ? '' : ` ${t('inventory.guestConfirmNote')}`)); closeAddPanel();
-    } catch (err) { setStageError(err?.message ?? t('inventory.csvFailed')); } finally { setStageBusy(false); }
-  }
-
-  async function legacyScan(e) {
-    e.preventDefault();
-    const addr = normalizeWallet(wallet);
+    const addr = normalizeWallet(scanAddr);
     if (!addr) {
-      setError(t('inventory.walletInvalid'));
+      setStageError(t('inventory.walletInvalid'));
       return;
     }
-    setBusy('scan');
-    setError(null);
+    setStageBusy(true);
+    setStageError(null);
     try {
-      // Signed-in: merge previously saved costs for this wallet before / after chain scan.
-      let savedByCert = new Map();
-      if (user) {
-        try {
-          const token = await getToken();
-          if (token) {
-            const metaRes = await fetchMeta({ authToken: token, wallet: addr });
-            for (const row of metaRes?.items ?? []) {
-              if (row?.cert) savedByCert.set(String(row.cert), row);
-            }
-          }
-        } catch {
-          savedByCert = new Map();
-        }
-      }
-
       const res = await scanWallet(addr);
-      const holdings = res?.holdings ?? [];
-      const mapped = holdings.map((h) => {
-        const packCost = Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null;
-        const cert = h.serial || h.tokenId;
-        const prev = cert ? savedByCert.get(String(cert)) : null;
-        const cost = Number.isFinite(prev?.cost)
-          ? prev.cost
-          : packCost;
-        return {
-          cert,
-          wallet: addr,
-          name: h.name ?? prev?.name ?? null,
-          setName: h.setName ?? prev?.setName ?? null,
-          grade: h.grade ?? prev?.grade ?? null,
-          imageUrl: h.imageUrl ?? prev?.imageUrl ?? null,
-          indexImageUrl: h.indexImageUrl ?? prev?.indexImageUrl ?? null,
-          priceUsdCents: h.renaissFmv?.priceUsdCents ?? prev?.priceUsdCents ?? null,
-          href: h.renaissFmv?.href ?? prev?.href ?? null,
-          onChainCostUsd: packCost,
-          costSource: prev?.costSource === 'manual' ? 'manual' : (h.costSource ?? null),
-          acquireType: h.acquireType ?? null,
-          packPaymentTxHash: h.packPaymentTxHash ?? null,
-          cost,
-          listPrice: prev?.listPrice ?? null,
-          status: prev?.status || 'active',
-          qty: prev?.qty ?? 1,
-          notes: prev?.notes ?? (h.acquireType ? `acquire:${h.acquireType}` : null),
-        };
-      });
-      setPage(1);
-      setItems(mapped);
-      const saleRows = Array.isArray(res?.sales) ? res.sales : [];
-      setSales(saleRows);
-      setSalesSummary(res?.salesSummary ?? null);
-      const saleCount = res?.salesSummary?.count ?? saleRows.filter((s) => s.saleType !== 'TRANSFER_OUT').length;
-      setCsvNote(
-        res?.packCostPrefillCount
-          ? t('inventory.scanOkPrefillSales', {
-            prefill: res.packCostPrefillCount,
-            total: mapped.length,
-            sales: saleCount,
-            defaultValue: t('inventory.scanOkPrefill', { prefill: res.packCostPrefillCount, total: mapped.length }),
-          })
-          : t('inventory.scanOkSales', {
-            total: mapped.length,
-            sales: saleCount,
-            defaultValue: t('inventory.scanOk', { total: mapped.length }),
-          }),
-      );
-
-      legacyRememberWallet(addr);
-
-      // Persist only when signed in — backend rows follow uid + wallet.
-      if (user) {
-        await withAuth(async (token) => {
-          await persistBulk(mapped, token, addr);
-          if (saleRows.length) {
-            await bulkSales(saleRows, addr, { authToken: token });
-          }
-        });
-      } else {
-        setCsvNote((prev) => `${prev || ''} ${t('inventory.scanGuestNote')}`.trim());
-      }
+      const now = new Date().toISOString();
+      stageMany((res?.holdings ?? [])
+        .map((h) => stagedRowFromHolding(h, addr, now))
+        .filter((r) => r.cert));
+      const sales = Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [];
+      setStagedSales((prev) => [...prev, ...sales]);
+      // BenchmarkPanel scopes its inventory-vs-index series to this wallet.
+      rememberLastWallet(addr);
     } catch (err) {
-      setError(err?.message ?? t('inventory.scanFailed'));
+      setStageError(err?.message ?? t('inventory.scanFailed'));
     } finally {
-      setBusy(null);
+      setStageBusy(false);
     }
   }
 
-  async function legacyManualCert(e) {
-    e.preventDefault();
-    if (!legacyWallet) {
-      setError(t('inventory.needWalletFirst'));
-      return;
-    }
-    setBusy('cert');
-    setError(null);
+  async function loadCert() {
+    const cert = certInput.trim();
+    if (!cert) return;
+    setStageBusy(true);
+    setStageError(null);
     try {
-      const res = await fetchCard(manualCert.trim(), { series: true });
+      const res = await fetchCard(cert, { series: true });
       if (!res?.found) {
-        setError(res?.reason === 'not_found' || res?.found === false
-          ? t('inventory.certNotFound')
-          : (res?.reason || t('inventory.certFailed')));
+        setStageError(t('inventory.certNotFound'));
         return;
       }
-      const item = {
+      const art = res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null;
+      stageMany([{
         cert: res.cert,
-        wallet: legacyWallet,
         name: res.brief?.name ?? null,
         setName: res.brief?.setName ?? null,
         grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null,
-        imageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null,
-        indexImageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null,
+        imageUrl: art,
+        indexImageUrl: art,
         priceUsdCents: res.fmv?.priceUsdCents ?? res.brief?.priceUsdCents ?? null,
         href: res.fmv?.href ?? res.brief?.href ?? null,
         series30d: res.series30d ?? [],
@@ -519,21 +351,69 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         qty: 1,
         cost: null,
         costSource: 'manual',
-      };
+        addedVia: 'cert',
+        createdAt: new Date().toISOString(),
+      }]);
+      setCertInput('');
+    } catch (err) {
+      setStageError(err?.message ?? t('inventory.certFailed'));
+    } finally {
+      setStageBusy(false);
+    }
+  }
+
+  function loadCsv(file) {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? ''));
+      setStageError(rejected.length
+        ? t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length })
+        : null);
+      const now = new Date().toISOString();
+      stageMany(accepted.map((row) => ({ ...row, addedVia: 'csv', createdAt: now })));
+    };
+    reader.readAsText(file);
+  }
+
+  async function persistStagedSales(token) {
+    const byWallet = new Map();
+    for (const sale of stagedSales) {
+      const w = sale.wallet || '';
+      if (!w) continue;
+      if (!byWallet.has(w)) byWallet.set(w, []);
+      byWallet.get(w).push(sale);
+    }
+    for (const [w, rows] of byWallet) {
+      await bulkSales(rows, w, { authToken: token });
+    }
+  }
+
+  async function confirmStaged() {
+    if (!staged.length) return;
+    setStageBusy(true);
+    setStageError(null);
+    try {
       if (user) {
-        await withAuth((token) => persistItem(item, token, legacyWallet));
-        await legacyLoadWalletInventory(legacyWallet);
+        await withAuth(async (token) => {
+          await persistBulk(staged, token, null);
+          await persistStagedSales(token);
+        });
+        await loadInventory();
       } else {
         setItems((prev) => {
-          const rest = prev.filter((p) => p.cert !== item.cert);
-          return [item, ...rest];
+          const byCert = new Map(prev.map((p) => [String(p.cert || p.id), p]));
+          for (const r of staged) byCert.set(String(r.cert), { ...byCert.get(String(r.cert)), ...r });
+          return [...byCert.values()];
         });
       }
-      setSelectedCert(item.cert);
+      const guestNote = user ? '' : ` ${t('inventory.guestConfirmNote')}`;
+      setCsvNote(t('inventory.confirmSaved', { count: staged.length }) + guestNote);
+      closeAddPanel();
     } catch (err) {
-      setError(err?.message ?? t('inventory.certFailed'));
+      setStageError(err?.message ?? t('inventory.csvFailed'));
     } finally {
-      setBusy(null);
+      setStageBusy(false);
     }
   }
 
@@ -600,36 +480,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  function legacyCsvFile(file) {
-    if (!file) return;
-    if (!legacyWallet) {
-      setError(t('inventory.needWalletFirst'));
-      return;
-    }
-    const reader = new FileReader();
-    reader.onload = async () => {
-      const { accepted, rejected } = parseInventoryCsv(String(reader.result ?? ''));
-      setCsvNote(t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length }));
-      if (!accepted.length) return;
-      const withWallet = accepted.map((row) => ({ ...row, wallet: legacyWallet }));
-      if (user) {
-        try {
-          await withAuth((token) => bulkMeta(withWallet, { authToken: token }));
-          await legacyLoadWalletInventory(legacyWallet);
-        } catch (err) {
-          setError(err?.message ?? t('inventory.csvFailed'));
-        }
-      } else {
-        setItems((prev) => {
-          const map = new Map(prev.map((p) => [p.cert, p]));
-          for (const row of withWallet) map.set(row.cert, { ...map.get(row.cert), ...row });
-          return [...map.values()];
-        });
-      }
-    };
-    reader.readAsText(file);
-  }
-
   void firebaseOk;
 
   const FILTERS = [
@@ -691,58 +541,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       </header>
 
       {error && <div className="empty" style={{ color: 'var(--clear)' }}>{error}</div>}
-
-      {/* Add controls are rendered by the staged add panel. */}
-      {/* <section className="panel-grid">
-        <form className="glass-card" onSubmit={legacyScan}>
-          <p className="label">{t('inventory.walletScan')}</p>
-          <div className="form-row" style={{ gridTemplateColumns: '1fr auto auto', marginBottom: '0.5rem' }}>
-            <input
-              className="input"
-              placeholder={t('inventory.walletPlaceholder')}
-              value={wallet}
-              onChange={(e) => setWallet(e.target.value)}
-            />
-            <button
-              className="btn btn-ghost btn-sm"
-              type="button"
-              disabled={busy === 'load' || !wallet.trim() || !user}
-              onClick={handleLoadSaved}
-              title={!user ? t('inventory.needSignInLoad') : t('inventory.loadSavedHint')}
-            >
-              {busy === 'load' ? t('common.loading') : t('inventory.loadSaved')}
-            </button>
-            <button className="btn btn-primary" type="submit" disabled={busy === 'scan' || !wallet.trim()}>
-              {busy === 'scan' ? t('inventory.scanning') : t('inventory.rescan')}
-            </button>
-          </div>
-          <p className="small">{t('inventory.walletHint')}</p>
-          <p className="small">{t('inventory.loadVsScanHint')}</p>
-        </form>
-
-        <form className="glass-card" onSubmit={legacyManualCert}>
-          <p className="label">{t('inventory.manualCert')}</p>
-          <div className="form-row" style={{ gridTemplateColumns: '1fr auto' }}>
-            <input
-              className="input"
-              placeholder={t('inventory.certPlaceholder')}
-              value={manualCert}
-              onChange={(e) => setManualCert(e.target.value)}
-            />
-            <button className="btn btn-primary" type="submit" disabled={busy === 'cert' || !manualCert.trim()}>
-              {busy === 'cert' ? t('inventory.lookingUp') : t('inventory.add')}
-            </button>
-          </div>
-          <p className="small">{t('inventory.manualHint')}</p>
-        </form>
-      </section>
-
-      <section className="glass-card">
-        <p className="label">{t('inventory.csvImport')}</p>
-        <input type="file" accept=".csv,text/csv" onChange={(e) => legacyCsvFile(e.target.files?.[0])} />
-        <p className="small">{t('inventory.csvHint')} <code>cert</code></p>
-        {csvNote && <p className="small">{csvNote}</p>}
-      </section> */}
+      {csvNote && <p className="small">{csvNote}</p>}
 
       {addMethod && (
         <section className="glass-card add-panel">
