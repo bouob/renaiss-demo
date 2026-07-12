@@ -8,83 +8,14 @@ import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
-import { isValidAddressShape } from '../lib/walletGuard.js';
-import { sanitizeMoney, sanitizeQty, sanitizeNonNegInt } from '../lib/moneySanitize.js';
+import { ensureDefaultPortfolio } from '../services/defaultPortfolio.js';
+import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem } from '../lib/inventoryItem.js';
 
 const router = Router();
-export const COLLECTION = 'hackathonMerchantInventory';
-const CERT_SHAPE = /^[A-Za-z0-9._-]{3,64}$/;
-const STATUSES = new Set(['active', 'promoted', 'delisted', 'sold', 'hold', 'clear']);
-const ACQUIRE_TYPES = new Set(['PACK_PULL', 'MINT', 'TRANSFER', 'UNKNOWN', 'PACK_PAYMENT']);
-const COST_SOURCES = new Set([
-  'manual',
-  'pack_payment',
-  'pack_payment_split',
-  'pack_unmatched',
-  'secondary_transfer',
-  'unavailable',
-  'buy',
-]);
+export { COLLECTION } from '../lib/inventoryItem.js';
 
 function itemRef(uid, cert) {
   return adminDb.collection(COLLECTION).doc(uid).collection('items').doc(cert);
-}
-
-function sanitizeWallet(v) {
-  const w = typeof v === 'string' ? v.trim() : '';
-  if (!isValidAddressShape(w)) return null;
-  return w.toLowerCase();
-}
-
-function sanitizeString(v, max) {
-  if (typeof v !== 'string') return null;
-  const s = v.trim().slice(0, max);
-  return s || null;
-}
-
-function sanitizeItem(body, cert) {
-  const status = typeof body.status === 'string' && STATUSES.has(body.status)
-    ? body.status
-    : 'active';
-  const wallet = sanitizeWallet(body.wallet);
-  const acquireType = typeof body.acquireType === 'string' && ACQUIRE_TYPES.has(body.acquireType)
-    ? body.acquireType
-    : null;
-  const costSource = typeof body.costSource === 'string' && COST_SOURCES.has(body.costSource)
-    ? body.costSource
-    : null;
-  // Money: ≥0, ≤999_999_999, max 2 decimals (no negatives / scientific notation).
-  // priceUsdCents is integer cents — cap at MAX_MONEY * 100.
-  const priceUsdCents = sanitizeNonNegInt(body.priceUsdCents, { max: 999_999_999 * 100 });
-  const patch = {
-    cert,
-    wallet,
-    cost: sanitizeMoney(body.cost),
-    listPrice: sanitizeMoney(body.listPrice),
-    qty: sanitizeQty(body.qty),
-    target: sanitizeMoney(body.target),
-    stop: sanitizeMoney(body.stop),
-    status,
-    name: sanitizeString(body.name, 200),
-    setName: sanitizeString(body.setName, 200),
-    grade: sanitizeString(body.grade, 40),
-    imageUrl: sanitizeString(body.imageUrl, 500),
-    priceUsdCents,
-    href: sanitizeString(body.href, 300),
-    notes: sanitizeString(body.notes, 1000),
-    acquireType,
-    costSource,
-    onChainCostUsd: sanitizeMoney(body.onChainCostUsd),
-    packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
-    updatedAt: new Date().toISOString(),
-  };
-  // Drop null optional pack fields so merge doesn't wipe prior values when omitted.
-  if (patch.acquireType == null) delete patch.acquireType;
-  if (patch.costSource == null) delete patch.costSource;
-  if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;
-  if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
-  if (patch.wallet == null) delete patch.wallet;
-  return patch;
 }
 
 /** Whether uid owns cert under optional wallet filter (for insight ownership gate). */
@@ -109,7 +40,11 @@ router.get('/meta', requireAuth, async (req, res) => {
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable', items: [] });
     }
-    const walletFilter = sanitizeWallet(req.query?.wallet);
+    const seed = await ensureDefaultPortfolio(req.uid).catch((err) => {
+      console.warn(`[meta:get] seed skipped: ${err?.message ?? err}`);
+      return { wallet: null, seeded: false };
+    });
+    const walletFilter = sanitizeWallet(req.query?.wallet) || seed.wallet;
     if (!walletFilter) {
       return res.json({ items: [], uid: req.uid, wallet: null, reason: 'wallet_required' });
     }
