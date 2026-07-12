@@ -13,6 +13,7 @@ const COST_SOURCES = new Set([
   'secondary_transfer', 'unavailable', 'buy',
 ]);
 const ADDED_VIA = new Set(['scan', 'cert', 'csv']);
+const DECISIONS = new Set(['promote', 'hold', 'clear']);
 
 // alphaPct30d is a decimal fraction (0.12 = +12%): floor at a total loss,
 // cap well above any plausible 30d move to reject junk without truncating signal.
@@ -79,8 +80,12 @@ export function sanitizeItem(body, cert) {
     packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
     addedVia: typeof body.addedVia === 'string' && ADDED_VIA.has(body.addedVia) ? body.addedVia : null,
     sourceWallet: sanitizeWallet(body.sourceWallet),
+    // Merchant's manual promote/hold/clear override; null lets the client fall
+    // back to the rules-engine classification.
+    decision: typeof body.decision === 'string' && DECISIONS.has(body.decision) ? body.decision : null,
     updatedAt: new Date().toISOString(),
   };
+  if (patch.decision == null) delete patch.decision;
   if (patch.acquireType == null) delete patch.acquireType;
   if (patch.costSource == null) delete patch.costSource;
   if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;

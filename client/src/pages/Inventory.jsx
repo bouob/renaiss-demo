@@ -6,7 +6,10 @@ import {
   BadgeCheck,
   LayoutGrid,
   List,
+  Minus,
   ScanLine,
+  TrendingDown,
+  TrendingUp,
   Upload,
 } from 'lucide-react';
 import {
@@ -49,9 +52,32 @@ import {
 import { provenanceLabel } from '../lib/provenance.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
+import StrengthBar from '../components/StrengthBar.jsx';
 
 const PAGE_SIZE = 50;
 const VIEW_PREFS_KEY = 'merchant_inventory_view';
+
+const DECISION_ICON = {
+  promote: TrendingUp,
+  hold: Minus,
+  clear: TrendingDown,
+};
+
+function DecisionBadge({ decision, className = '' }) {
+  const { t } = useTranslation();
+  const Icon = DECISION_ICON[decision] || Minus;
+  const label = t(`decision.${decision}`);
+  return (
+    <span
+      className={`decision-badge ${decision} ${className}`.trim()}
+      role="img"
+      aria-label={label}
+      title={label}
+    >
+      <Icon size={16} strokeWidth={2.5} aria-hidden="true" />
+    </span>
+  );
+}
 
 function readViewPrefs() {
   try {
@@ -92,7 +118,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [certInput, setCertInput] = useState('');
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
-  const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
+  const [filter, setFilter] = useState('all'); // all | promote | hold | clear
   const [viewMode, setViewMode] = useState(initialPrefs.viewMode);
   const [sortKey, setSortKey] = useState(initialPrefs.sortKey);
   const [sortDir, setSortDir] = useState(initialPrefs.sortDir);
@@ -217,21 +243,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     [items, linkedWallet, defaultWallet],
   );
 
-  const onBoard = useMemo(() => {
-    const keys = new Set();
-    for (const m of movers) {
-      if (m.name) keys.add(String(m.name).toLowerCase());
-      if (m.slug) keys.add(m.slug);
-    }
-    return visibleItems.filter((it) => {
-      const nameHit = it.name && keys.has(String(it.name).toLowerCase());
-      const hrefSlug = typeof it.href === 'string' && it.href.startsWith('/card/')
-        ? it.href.slice('/card/'.length)
-        : null;
-      return nameHit || (hrefSlug && keys.has(hrefSlug));
-    });
-  }, [visibleItems, movers]);
-
   const enriched = useMemo(() => visibleItems.map((it) => {
     const mover = movers.find((m) =>
       (it.name && m.name && String(it.name).toLowerCase() === String(m.name).toLowerCase())
@@ -259,7 +270,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       ...it,
       isDemo: isDemoItem(it, defaultWallet),
       alphaPct30d,
-      decision: detail.decision || 'hold',
+      // A merchant's saved override wins; otherwise fall back to the rules engine.
+      decision: it.decision ?? detail.decision ?? 'hold',
       damped: detail.damped,
       liquidityBand: detail.liquidityBand,
       fmvUsd,
@@ -274,10 +286,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   const filtered = useMemo(() => {
     if (filter === 'all') return enriched;
-    if (filter === 'pack') {
-      return enriched.filter((it) => it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT'
-        || it.costSource === 'pack_payment' || it.costSource === 'pack_payment_split');
-    }
     return enriched.filter((it) => (it.decision || 'hold') === filter);
   }, [enriched, filter]);
 
@@ -632,7 +640,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     { id: 'promote', label: t('inventory.filters.promote') },
     { id: 'hold', label: t('inventory.filters.hold') },
     { id: 'clear', label: t('inventory.filters.clear') },
-    { id: 'pack', label: t('inventory.filters.pack') },
   ];
 
   return (
@@ -698,24 +705,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
           {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(centsToUsd(r.priceUsdCents))}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
           <div className="modal-actions" style={{ marginTop: '.8rem' }}><button type="button" className="btn btn-ghost btn-sm" onClick={closeAddPanel}>{t('inventory.discard')}</button><button type="button" className="btn btn-primary" disabled={stageBusy || staged.length === 0} onClick={confirmStaged}>{t('inventory.confirmAdd', { count: staged.length })}</button></div>
-        </section>
-      )}
-
-      {!addMethod && onBoard.length > 0 && (
-        <section className="glass-card">
-          <p className="label">{t('inventory.onBoard', { count: onBoard.length })}</p>
-          <div className="chip-row">
-            {onBoard.slice(0, 12).map((it) => (
-              <button
-                key={it.cert || it.id}
-                type="button"
-                className="chip chip-btn"
-                onClick={() => setSelectedCert(it.cert || it.id)}
-              >
-                {it.name || it.cert}
-              </button>
-            ))}
-          </div>
         </section>
       )}
 
@@ -795,20 +784,22 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   <LayoutGrid size={16} strokeWidth={1.75} />
                 </button>
               </div>
-              {linkedWallet ? (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  disabled={unlinkBusy}
-                  onClick={handleUnlinkWallet}
-                  title={t('inventory.unlinkWalletHint')}
-                >
-                  {unlinkBusy ? t('inventory.unlinking') : t('inventory.unlinkWallet')}
+            </div>
+            <div className="inventory-actions">
+                {linkedWallet ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost inventory-action-btn"
+                    disabled={unlinkBusy}
+                    onClick={handleUnlinkWallet}
+                    title={t('inventory.unlinkWalletHint')}
+                  >
+                    {unlinkBusy ? t('inventory.unlinking') : t('inventory.unlinkWallet')}
+                  </button>
+                ) : null}
+                <button type="button" className="btn btn-primary inventory-action-btn" onClick={() => setShowAddModal(true)}>
+                  {t('inventory.addInventory')}
                 </button>
-              ) : null}
-              <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>
-                {t('inventory.addInventory')}
-              </button>
             </div>
           </div>
         </div>
@@ -824,7 +815,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {pageItems.map((it) => {
                   const cert = it.cert || it.id;
                   const decision = it.decision || 'hold';
-                  const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
                   const imageUrl = it.indexImageUrl || it.imageUrl;
                   return (
                     <button
@@ -840,15 +830,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                         ) : (
                           <div className="thumb-fallback inventory-tile-fallback">{t('common.card')}</div>
                         )}
-                        <span className={`badge inventory-tile-badge ${decision}`}>
-                          {t(`decision.${decision}`)}
-                        </span>
+                        <DecisionBadge decision={decision} className="inventory-tile-badge" />
                       </div>
                       <div className="inventory-tile-body">
                         <strong className="inventory-tile-name">{it.name || cert}</strong>
                         <div className="small">
                           {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
-                          {isPack ? ` · ${t('inventory.pack')}` : ''}
                           {it.isDemo ? ` · ${t('inventory.sourceDemo')}` : ''}
                         </div>
                         <div className="inventory-tile-prices">
@@ -866,6 +853,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
               <div className="inventory-list" role="list">
                 <div className="inventory-list-head">
                   <span className="inventory-list-col-card">{t('inventory.yourInventory')}</span>
+                  <span className="inventory-list-col-num">{t('inventory.statsCost')}</span>
                   <button
                     type="button"
                     className={`inventory-list-col-num inventory-sort-head ${sortKey === 'fmv' ? 'active' : ''}`}
@@ -882,12 +870,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                     {t('inventory.statsUnrealized')}
                     {sortKey === 'unrealized' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
                   </button>
+                  <span className="inventory-list-col-num inventory-list-col-alpha">{t('dashboard.strengthLabel')}</span>
                   <span className="inventory-list-col-badge" />
                 </div>
                 {pageItems.map((it) => {
                   const cert = it.cert || it.id;
                   const decision = it.decision || 'hold';
-                  const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
                   const imageUrl = it.indexImageUrl || it.imageUrl;
                   return (
                     <button
@@ -908,19 +896,25 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                         <div className="inventory-row-meta">
                           <strong className="inventory-row-name">{it.name || cert}</strong>
                           <span className="small inventory-row-sub">
-                            {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
-                            {isPack ? <span className="chip inventory-row-pack">{t('inventory.pack')}</span> : null}
-                            {it.isDemo ? <span className="chip inventory-row-demo">{t('inventory.sourceDemo')}</span> : null}
+                            {it.setName || it.setCode || cert}
                           </span>
+                          {(it.grade || it.isDemo) ? (
+                            <span className="inventory-row-tags">
+                              {it.grade ? <span className="chip inventory-row-grade">{it.grade}</span> : null}
+                              {it.isDemo ? <span className="chip inventory-row-demo">{t('inventory.sourceDemo')}</span> : null}
+                            </span>
+                          ) : null}
                         </div>
                       </div>
+                      <span className="inventory-row-num inventory-row-cost">{formatUsd(it.cost)}</span>
                       <span className="inventory-row-num">{formatUsd(it.fmvUsd)}</span>
                       <span className={`inventory-row-num ${Number.isFinite(it.pnl) ? (it.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}`}>
                         {formatUsdSigned(it.pnl)}
                       </span>
-                      <span className={`badge inventory-row-badge ${decision}`}>
-                        {t(`decision.${decision}`)}
+                      <span className="inventory-row-strength">
+                        <StrengthBar alphaPct30d={it.alphaPct30d} />
                       </span>
+                      <DecisionBadge decision={decision} className="inventory-row-badge" />
                     </button>
                   );
                 })}

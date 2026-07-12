@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { fetchWall } from '../lib/wallApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
@@ -7,24 +7,21 @@ import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/r
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 import { readLastWallet } from '../lib/lastWallet.js';
 import { formatUsdCents } from '../lib/money.js';
+import { filterLinkedInventory } from '../lib/demoInventory.js';
+import {
+  classifyMerchantDecisionDetail,
+  DEMO_PROMOTE_ALPHA_BY_CERT,
+} from '../lib/merchantCopilot.js';
 import MoversList from '../components/MoversList.jsx';
 import InfoHint from '../components/InfoHint.jsx';
 import BenchmarkPanel from '../components/BenchmarkPanel.jsx';
 import TopBoardGallery from '../components/TopBoardGallery.jsx';
 
-function moverMatchesInventory(mover, items) {
-  const moverName = mover?.name ? String(mover.name).toLowerCase() : '';
-  const moverSlug = mover?.slug || '';
-  const moverHref = mover?.href || '';
-  return items.some((item) => {
-    const itemName = item?.name ? String(item.name).toLowerCase() : '';
-    const itemSlug = typeof item?.href === 'string' && item.href.startsWith('/card/')
-      ? item.href.slice('/card/'.length)
-      : '';
-    return (moverName && itemName === moverName)
-      || (moverSlug && itemSlug === moverSlug)
-      || (moverHref && item?.href === moverHref);
-  });
+function moverForInventoryItem(item, movers) {
+  return movers.find((mover) => (
+    (item?.name && mover?.name && String(item.name).toLowerCase() === String(mover.name).toLowerCase())
+    || (item?.href && mover?.href && item.href === mover.href)
+  ));
 }
 
 export default function Dashboard({ user, getToken }) {
@@ -32,6 +29,7 @@ export default function Dashboard({ user, getToken }) {
   const [wall, setWall] = useState(null);
   const [movers, setMovers] = useState([]);
   const [inventoryItems, setInventoryItems] = useState([]);
+  const [defaultWallet, setDefaultWallet] = useState(null);
   const [trades, setTrades] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -64,15 +62,21 @@ export default function Dashboard({ user, getToken }) {
     let cancelled = false;
     if (!user) {
       setInventoryItems([]);
+      setDefaultWallet(null);
       return undefined;
     }
     (async () => {
       try {
         const token = await getToken();
         if (!token) return;
-        const wallet = readLastWallet();
-        const metaRes = await fetchMeta({ authToken: token, wallet: wallet || undefined });
-        if (!cancelled) setInventoryItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+        // Match Inventory's source scope. Dashboard used to request only the
+        // linked wallet here, which omitted demo/manual rows that Inventory
+        // could classify as promote.
+        const metaRes = await fetchMeta({ authToken: token });
+        if (!cancelled) {
+          setInventoryItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
+          setDefaultWallet(typeof metaRes?.defaultWallet === 'string' ? metaRes.defaultWallet : null);
+        }
       } catch {
         if (!cancelled) setInventoryItems([]);
       }
@@ -83,7 +87,43 @@ export default function Dashboard({ user, getToken }) {
   const index = wall;
   const top10 = index?.top10 ?? index?.topMovers ?? [];
   const indexHomeUrl = index?.attributionUrl || RENAISS_INDEX_BASE_URL;
-  const inventoryMovers = movers.filter((m) => moverMatchesInventory(m, inventoryItems));
+  const inventoryMovers = useMemo(() => {
+    const visibleItems = filterLinkedInventory(inventoryItems, readLastWallet(), defaultWallet);
+
+    // Use the same alpha precedence and classification as Inventory. A market
+    // mover augments a holding with market fields, but is not required for the
+    // holding to appear: saved/demo alpha is enough to make its decision.
+    return visibleItems.map((item) => {
+      const mover = moverForInventoryItem(item, movers);
+      const alphaPct30d = mover?.alphaPct30d
+        ?? item.alphaPct30d
+        ?? DEMO_PROMOTE_ALPHA_BY_CERT[item.cert]
+        ?? null;
+      const detail = classifyMerchantDecisionDetail({
+        alphaPct30d,
+        thinMarketData: mover?.thinMarketData,
+        marketDataLoaded: true,
+        liquidityScore: mover?.liquidityScore,
+      });
+
+      return {
+        ...item,
+        ...mover,
+        name: mover?.name ?? item.name,
+        setName: mover?.setName ?? item.setName,
+        setCode: mover?.setCode ?? item.setCode,
+        cardNumber: mover?.cardNumber ?? item.cardNumber,
+        grade: mover?.grade ?? item.grade,
+        imageUrl: mover?.imageUrl ?? item.imageUrl,
+        imageUrlThumb: mover?.imageUrlThumb ?? item.imageUrlThumb,
+        href: mover?.href ?? item.href,
+        priceUsdCents: mover?.priceUsdCents ?? item.priceUsdCents,
+        alphaPct30d,
+        // A merchant's saved override wins; otherwise fall back to the rules engine.
+        decision: item.decision ?? detail.decision ?? 'hold',
+      };
+    });
+  }, [inventoryItems, movers, defaultWallet]);
   const dateLocale = i18n.language === 'ja' ? 'ja-JP' : i18n.language === 'zh-TW' ? 'zh-TW' : 'en-US';
 
   return (

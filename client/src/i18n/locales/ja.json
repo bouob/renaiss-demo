@@ -7,7 +7,7 @@
   },
   "nav": {
     "brand": "Merchant Copilot",
-    "brandSub": "Dokipoki · Renaiss",
+    "brandSub": "Powered by Renaiss Index",
     "dashboard": "ダッシュボード",
     "inventory": "在庫",
     "signIn": "ログイン",
@@ -97,6 +97,12 @@
     "moversTitle": "在庫のムーバー",
     "moversHint": "Alpha = カード30日リターン − 指数30日。行クリックで Renaiss OS Index の鑑定カードを開きます。",
     "moversEmpty": "movers なし — ペイロード空またはキー未設定。",
+    "actionAdvice": {
+      "label": "推奨アクション",
+      "promote": "優先的に露出・販促し、現在の市場価格に合わせて出品価格を調整します。",
+      "hold": "現時点では対応不要です。流動性が低い、またはシグナル不足のカードは成約データが増えるまで観察します。",
+      "clear": "優先的な売却を検討し、市場の厚みに応じて競争力のある出品価格を設定します。"
+    },
     "autoRotate": "自動",
     "autoPaused": "一時停止",
     "summaryPromote": "プッシュ",
@@ -105,7 +111,12 @@
     "viaSeries": "系列経由",
     "liqOk": "流動性✓",
     "noLiq": "流動性シグナルなし",
-    "top10Empty": "構成銘柄がありません。"
+    "top10Empty": "構成銘柄がありません。",
+    "strengthLabel": "強さ",
+    "strengthStronger": "市場より {{alpha}} 強い",
+    "strengthWeaker": "市場より {{alpha}} 弱い",
+    "strengthEven": "市場とほぼ同水準",
+    "strengthBody": "このカードの過去30日間の値動きを市場全体と比較した相対パフォーマンスです。実際の損益ではありません。"
   },
   "benchmark": {
     "tabIndex": "指数",
@@ -184,13 +195,11 @@
     "loadOkSales": "{{total}} 枚 · 売却 {{sales}} 件を読込",
     "scanOkSales": "スキャン完了 · 保有 {{total}} · 売却 {{sales}}",
     "scanOkPrefillSales": "スキャン完了 · パック {{prefill}}/{{total}} · 売却 {{sales}}",
-    "pack": "パック",
     "filters": {
       "all": "すべて",
       "promote": "プッシュ",
       "hold": "ホールド",
-      "clear": "クリア",
-      "pack": "パック由来"
+      "clear": "クリア"
     },
     "viewList": "リスト表示",
     "viewGrid": "グリッド表示",
@@ -223,6 +232,9 @@
   },
   "detail": {
     "label": "保有詳細",
+    "tabsAria": "保有詳細タブ",
+    "tabInventory": "Inventory",
+    "tabAdvanced": "Advanced",
     "fmv": "FMV",
     "cost": "コスト",
     "pnl": "損益",
@@ -236,10 +248,11 @@
     "listPricePlaceholder": "リスト USD",
     "notes": "メモ",
     "notesPlaceholder": "任意メモ",
-    "active": "保有中",
-    "promote": "プッシュ",
-    "delist": "出品停止",
-    "sold": "売却済",
+    "listingStatus": "Listing status",
+    "listedOn": "Listed",
+    "listedOff": "Not Listed",
+    "merchDecision": "Merchant decision",
+    "markSold": "Mark as Sold",
     "renaissIndex": "Renaiss Index ↗",
     "related": "隣接 ±1",
     "aiTitle": "AI マーチャント助言",

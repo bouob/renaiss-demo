@@ -2,6 +2,7 @@ import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
+import brandLogo from '../../Assets/Dokipoki.png';
 
 export default function Layout({ children, user, onSignIn, onSignOut, authReady, firebaseOk, authError }) {
   const { t } = useTranslation();
@@ -17,9 +18,7 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
 
       <header className="topnav">
         <div className="brand">
-          <span className="brand-mark" aria-hidden="true">
-            <span className="brand-pulse" />
-          </span>
+          <img className="brand-mark" src={brandLogo} alt={t('nav.brand')} />
           <div className="brand-text">
             <span className="brand-title">{t('nav.brand')}</span>
             <span className="brand-sub">

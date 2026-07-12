@@ -1,12 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Sparkline from './Sparkline.jsx';
+import StrengthBar from './StrengthBar.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { resolveMarketplaceUrl, openMarketplacePage } from '../lib/renaissMarketplaceUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
-import { provenanceLabel } from '../lib/provenance.js';
 import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
 import { adjacentNotice } from '../lib/adjacent.js';
 
@@ -40,23 +40,15 @@ export default function HoldingDetailModal({
       : (Number.isFinite(item?.suggested) ? String(item.suggested.toFixed(2)) : ''),
   );
   const [notesDraft, setNotesDraft] = useState(item?.notes || '');
+  const [decisionDraft, setDecisionDraft] = useState(item?.decision || 'hold');
+  const [tab, setTab] = useState('inventory');
   const [ai, setAi] = useState(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState(null);
   const [artBroken, setArtBroken] = useState(false);
 
   const cert = item?.cert || item?.id;
-  const indexUrl = resolveIndexUrl(item?.href);
-  // Marketplace first (renaiss.xyz): identify the card, then link. tokenId
-  // (scan) > cert serial search (?q=) > name+set. Index stays a secondary CTA.
-  const marketUrl = resolveMarketplaceUrl({
-    tokenId: item?.tokenId,
-    cert,
-    name: item?.name,
-    setName: item?.setName,
-  });
   const decision = item?.decision || 'hold';
-  const decisionLabel = t(`decision.${decision}`);
 
   useEffect(() => {
     if (!item) return undefined;
@@ -66,6 +58,8 @@ export default function HoldingDetailModal({
         : (Number.isFinite(item.suggested) ? String(Number(item.suggested).toFixed(2)) : ''),
     );
     setNotesDraft(item.notes || '');
+    setDecisionDraft(item.decision || 'hold');
+    setTab('inventory');
     setSeries(Array.isArray(item.series30d) ? item.series30d : []);
     setReturnPct(item.returnPct30d ?? null);
     setRelated(null);
@@ -145,6 +139,7 @@ export default function HoldingDetailModal({
         cost,
         listPrice,
         notes: (notesDraft || '').slice(0, 1000) || null,
+        decision: decisionDraft,
         costSource: cost != null ? 'manual' : item.costSource,
         status: item.status || 'active',
       });
@@ -192,6 +187,8 @@ export default function HoldingDetailModal({
   const packTx = item.packPaymentTxHash
     ? `${String(item.packPaymentTxHash).slice(0, 8)}…${String(item.packPaymentTxHash).slice(-4)}`
     : null;
+  const currentStatus = item.status || 'active';
+  const isListed = currentStatus !== 'delisted' && currentStatus !== 'sold';
 
   const notice = adjacentNotice(related);
 
@@ -306,10 +303,31 @@ export default function HoldingDetailModal({
           </div>
 
           <div className="modal-meta stack" style={{ gap: '0.75rem' }}>
+            <div className="holding-detail-tabs" role="tablist" aria-label={t('detail.tabsAria')}>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'inventory'}
+                className={`holding-detail-tab ${tab === 'inventory' ? 'active' : ''}`}
+                onClick={() => setTab('inventory')}
+              >
+                {t('detail.tabInventory')}
+              </button>
+              <button
+                type="button"
+                role="tab"
+                aria-selected={tab === 'advanced'}
+                className={`holding-detail-tab ${tab === 'advanced' ? 'active' : ''}`}
+                onClick={() => setTab('advanced')}
+              >
+                {t('detail.tabAdvanced')}
+              </button>
+            </div>
+
             <div className="list-item-title-row">
               {item.grade && <span className="chip">{item.grade}</span>}
-              <span className={`badge ${decision}`}>{decisionLabel}</span>
-              <span className="chip">{t(`status.${item.status || 'active'}`, { defaultValue: item.status || 'active' })}</span>
+              <span className={`chip decision-chip ${decision}`}>{t(`decision.${decision}`, { defaultValue: decision })}</span>
+              <span className="chip">{t(`status.${currentStatus}`, { defaultValue: currentStatus })}</span>
               {item.acquireType && (
                 <span className="chip">{t(`acquire.${item.acquireType}`, { defaultValue: item.acquireType })}</span>
               )}
@@ -317,10 +335,6 @@ export default function HoldingDetailModal({
                 <span className="chip">{t(`costSource.${item.costSource}`, { defaultValue: item.costSource })}</span>
               )}
             </div>
-            {provenanceLabel(item, t, { defaultWallet }) && (
-              <p className="small muted">{provenanceLabel(item, t, { defaultWallet })}</p>
-            )}
-
             <div className="stat-grid">
               <div className="stat-cell">
                 <span className="label">{t('detail.fmv')}</span>
@@ -338,9 +352,14 @@ export default function HoldingDetailModal({
                 </strong>
               </div>
               <div className="stat-cell">
-                <span className="label">{t('detail.alpha')}</span>
-                <strong>
-                  {Number.isFinite(item.alphaPct30d) ? `${(item.alphaPct30d * 100).toFixed(1)}%` : t('common.emDash')}
+                <span className="label">{t('dashboard.strengthLabel')}</span>
+                <strong style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem' }}>
+                  {Number.isFinite(item.alphaPct30d) ? (
+                    <>
+                      <StrengthBar alphaPct30d={item.alphaPct30d} />
+                      <span>{`${item.alphaPct30d >= 0 ? '+' : ''}${(item.alphaPct30d * 100).toFixed(1)}%`}</span>
+                    </>
+                  ) : t('common.emDash')}
                 </strong>
               </div>
             </div>
@@ -351,200 +370,209 @@ export default function HoldingDetailModal({
               {packTx ? ` · pack tx ${packTx}` : ''}
             </p>
 
-            <div>
-              <p className="label">{t('detail.trend30d')}</p>
-              {seriesLoading && <p className="small">{t('detail.loadingSeries')}</p>}
-              {!seriesLoading && series.length > 1 ? (
-                <>
-                  <Sparkline points={series} height={120} />
-                  {Number.isFinite(returnPct) && (
-                    <p className="small">
-                      {t('detail.return30d')}{' '}
-                      <span className={returnPct >= 0 ? 'text-pos' : 'text-neg'}>
-                        {(returnPct * 100).toFixed(1)}%
-                      </span>
-                    </p>
+            {tab === 'inventory' && (
+              <>
+                <div>
+                  <p className="label">{t('detail.trend30d')}</p>
+                  {seriesLoading && <p className="small">{t('detail.loadingSeries')}</p>}
+                  {!seriesLoading && series.length > 1 ? (
+                    <>
+                      <Sparkline points={series} height={120} />
+                      {Number.isFinite(returnPct) && (
+                        <p className="small">
+                          {t('detail.return30d')}{' '}
+                          <span className={returnPct >= 0 ? 'text-pos' : 'text-neg'}>
+                            {(returnPct * 100).toFixed(1)}%
+                          </span>
+                        </p>
+                      )}
+                    </>
+                  ) : (
+                    !seriesLoading && <div className="empty">{t('detail.noSeries')}</div>
                   )}
-                </>
-              ) : (
-                !seriesLoading && <div className="empty">{t('detail.noSeries')}</div>
-              )}
-            </div>
+                </div>
 
-            <div className="form-row" style={{ marginBottom: 0 }}>
-              <div>
-                <p className="label">{t('detail.cost')}</p>
-                <input
-                  className="input"
-                  type="text"
-                  {...MONEY_INPUT_ATTRS}
-                  autoComplete="off"
-                  placeholder={t('detail.costPlaceholder')}
-                  value={costDraft}
-                  onChange={(e) => setCostDraft(clampMoneyInput(e.target.value))}
-                  onBlur={() => {
-                    const p = parseMoney(costDraft);
-                    if (p.value != null) setCostDraft(String(p.value));
-                    else if (costDraft !== '') setCostDraft('');
-                  }}
-                />
-              </div>
-              <div>
-                <p className="label">{t('detail.listPrice')}</p>
-                <input
-                  className="input"
-                  type="text"
-                  {...MONEY_INPUT_ATTRS}
-                  autoComplete="off"
-                  placeholder={t('detail.listPricePlaceholder')}
-                  value={listDraft}
-                  onChange={(e) => setListDraft(clampMoneyInput(e.target.value))}
-                  onBlur={() => {
-                    const p = parseMoney(listDraft);
-                    if (p.value != null) setListDraft(String(p.value));
-                    else if (listDraft !== '') setListDraft('');
-                  }}
-                />
-              </div>
-            </div>
-            <div>
-              <p className="label">{t('detail.notes')}</p>
-              <textarea
-                className="input"
-                rows={2}
-                maxLength={1000}
-                placeholder={t('detail.notesPlaceholder')}
-                value={notesDraft}
-                onChange={(e) => setNotesDraft(e.target.value.slice(0, 1000))}
-              />
-            </div>
-            <button type="button" className="btn btn-primary btn-sm" onClick={saveAll}>
-              {t('common.save')}
-            </button>
+                <div className="form-row" style={{ marginBottom: 0 }}>
+                  <div>
+                    <p className="label">{t('detail.cost')}</p>
+                    <input
+                      className="input"
+                      type="text"
+                      {...MONEY_INPUT_ATTRS}
+                      autoComplete="off"
+                      placeholder={t('detail.costPlaceholder')}
+                      value={costDraft}
+                      onChange={(e) => setCostDraft(clampMoneyInput(e.target.value))}
+                      onBlur={() => {
+                        const p = parseMoney(costDraft);
+                        if (p.value != null) setCostDraft(String(p.value));
+                        else if (costDraft !== '') setCostDraft('');
+                      }}
+                    />
+                  </div>
+                  <div>
+                    <p className="label">{t('detail.listPrice')}</p>
+                    <input
+                      className="input"
+                      type="text"
+                      {...MONEY_INPUT_ATTRS}
+                      autoComplete="off"
+                      placeholder={t('detail.listPricePlaceholder')}
+                      value={listDraft}
+                      onChange={(e) => setListDraft(clampMoneyInput(e.target.value))}
+                      onBlur={() => {
+                        const p = parseMoney(listDraft);
+                        if (p.value != null) setListDraft(String(p.value));
+                        else if (listDraft !== '') setListDraft('');
+                      }}
+                    />
+                  </div>
+                </div>
+                <div>
+                  <p className="label">{t('detail.notes')}</p>
+                  <textarea
+                    className="input"
+                    rows={2}
+                    maxLength={1000}
+                    placeholder={t('detail.notesPlaceholder')}
+                    value={notesDraft}
+                    onChange={(e) => setNotesDraft(e.target.value.slice(0, 1000))}
+                  />
+                </div>
+                <div className="form-row" style={{ marginBottom: 0 }}>
+                  <div>
+                    <p className="label">{t('detail.listingStatus')}</p>
+                    <div className="actions holding-detail-actions">
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${isListed ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => onUpdateStatus?.(cert, 'active')}
+                      >
+                        {t('detail.listedOn')}
+                      </button>
+                      <button
+                        type="button"
+                        className={`btn btn-sm ${!isListed && currentStatus !== 'sold' ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => onUpdateStatus?.(cert, 'delisted')}
+                      >
+                        {t('detail.listedOff')}
+                      </button>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="label">{t('detail.merchDecision')}</p>
+                    <select
+                      className="select"
+                      value={decisionDraft}
+                      onChange={(e) => setDecisionDraft(e.target.value)}
+                    >
+                      <option value="promote">{t('decision.promote')}</option>
+                      <option value="hold">{t('decision.hold')}</option>
+                      <option value="clear">{t('decision.clear')}</option>
+                    </select>
+                  </div>
+                </div>
 
-            <div className="actions">
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onUpdateStatus?.(cert, 'active')}>
-                {t('detail.active')}
-              </button>
-              <button type="button" className="btn btn-primary btn-sm" onClick={() => onUpdateStatus?.(cert, 'promoted')}>
-                {t('detail.promote')}
-              </button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => onUpdateStatus?.(cert, 'delisted')}>
-                {t('detail.delist')}
-              </button>
-              <button type="button" className="btn btn-danger btn-sm" onClick={() => onUpdateStatus?.(cert, 'sold')}>
-                {t('detail.sold')}
-              </button>
-              {marketUrl && (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  onClick={(e) => openMarketplacePage({
-                    tokenId: item?.tokenId,
-                    cert,
-                    name: item?.name,
-                    setName: item?.setName,
-                  }, e)}
-                >
-                  {t('detail.renaissMarket')}
-                </button>
-              )}
-              {indexUrl && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-sm"
-                  onClick={(e) => openIndexPage(item.href, e)}
-                >
-                  {t('detail.renaissIndex')}
-                </button>
-              )}
-            </div>
-
-            {/* Dedicated adjacent block — always visible. Lazy query on click
-                (does not auto-fire; preserves /related quota). Disabled until
-                the mount-time /card lookup lands for the guest allowlist gate. */}
-            <div className="glass-card adjacent-section">
-              <div className="adjacent-section-head">
-                <p className="label" style={{ margin: 0 }}>{t('detail.adjacent')}</p>
-                <p className="small muted" style={{ margin: 0 }}>{t('detail.adjacentHint')}</p>
-              </div>
-
-              {relatedBusy ? (
-                <p className="small adjacent-loading" role="status" aria-live="polite">
-                  {t('detail.adjacentLoading')}
-                </p>
-              ) : !related ? (
-                <div className="adjacent-section-actions">
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    disabled={seriesLoading}
-                    onClick={loadRelated}
-                  >
-                    {t('detail.adjacentLoad')}
+                <div className="actions holding-detail-actions">
+                  <button type="button" className="btn btn-danger btn-sm" onClick={() => onUpdateStatus?.(cert, 'sold')}>
+                    {t('detail.markSold')}
+                  </button>
+                  <button type="button" className="btn btn-primary btn-sm" onClick={saveAll}>
+                    {t('common.save')}
                   </button>
                 </div>
-              ) : notice ? (
-                <div className="empty empty-actionable">
-                  <span>{t(notice.key)}</span>
-                  {notice.retryable && (
-                    <button
-                      type="button"
-                      className="btn btn-ghost btn-sm"
-                      onClick={loadRelated}
-                    >
-                      {t('detail.adjacentRetry')}
-                    </button>
-                  )}
-                </div>
-              ) : (
-                <ul className="adjacent-list">
-                  {related.neighbors.map((n) => (
-                    <li key={n.cert} className="adjacent-list-item">
-                      {renderNeighbor(n)}
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
+              </>
+            )}
 
-            <div className="glass-card" style={{ padding: '0.85rem' }}>
-              <p className="label" style={{ marginBottom: '0.4rem' }}>{t('detail.aiTitle')}</p>
-              <p className="small" style={{ marginBottom: '0.5rem' }}>{t('detail.aiHint')}</p>
-              {!ai && (
-                <button
-                  type="button"
-                  className="btn btn-primary btn-sm"
-                  disabled={aiBusy || !user}
-                  onClick={loadAi}
-                >
-                  {aiBusy ? t('detail.aiLoading') : t('detail.aiLoad')}
-                </button>
-              )}
-              {aiError && <p className="small" style={{ color: 'var(--clear)' }}>{aiError}</p>}
-              {ai?.content && (
-                <div className="stack" style={{ gap: '0.45rem', marginTop: '0.5rem' }}>
-                  <p style={{ margin: 0, fontWeight: 650 }}>{ai.content.verdict}</p>
-                  <pre className="small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>
-                    {ai.content.rationale}
-                  </pre>
-                  {Array.isArray(ai.content.caveats) && ai.content.caveats.length > 0 && (
-                    <ul className="small" style={{ margin: 0, paddingLeft: '1.1rem' }}>
-                      {ai.content.caveats.map((c) => <li key={c}>{c}</li>)}
+            {tab === 'advanced' && (
+              <>
+                {/* Dedicated adjacent block — always visible. Lazy query on click
+                    (does not auto-fire; preserves /related quota). Disabled until
+                    the mount-time /card lookup lands for the guest allowlist gate. */}
+                <div className="glass-card adjacent-section">
+                  <div className="adjacent-section-head">
+                    <p className="label" style={{ margin: 0 }}>{t('detail.adjacent')}</p>
+                    <p className="small muted" style={{ margin: 0 }}>{t('detail.adjacentHint')}</p>
+                  </div>
+
+                  {relatedBusy ? (
+                    <p className="small adjacent-loading" role="status" aria-live="polite">
+                      {t('detail.adjacentLoading')}
+                    </p>
+                  ) : !related ? (
+                    <div className="adjacent-section-actions">
+                      <button
+                        type="button"
+                        className="btn btn-primary btn-sm"
+                        disabled={seriesLoading}
+                        onClick={loadRelated}
+                      >
+                        {t('detail.adjacentLoad')}
+                      </button>
+                    </div>
+                  ) : notice ? (
+                    <div className="empty empty-actionable">
+                      <span>{t(notice.key)}</span>
+                      {notice.retryable && (
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-sm"
+                          onClick={loadRelated}
+                        >
+                          {t('detail.adjacentRetry')}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <ul className="adjacent-list">
+                      {related.neighbors.map((n) => (
+                        <li key={n.cert} className="adjacent-list-item">
+                          {renderNeighbor(n)}
+                        </li>
+                      ))}
                     </ul>
                   )}
-                  <p className="small">
-                    {ai.fromCache ? t('detail.aiFromCache') : t('detail.aiFresh')}
-                    {ai.usage ? ` · ${ai.usage.count}/${ai.usage.limit}` : ''}
-                  </p>
-                  {ai.fromCache && (
-                    <button type="button" className="btn btn-ghost btn-sm" disabled={aiBusy} onClick={loadAi}>
-                      {t('detail.aiRefresh')}
+                </div>
+
+                <div className="glass-card" style={{ padding: '0.85rem' }}>
+                  <p className="label" style={{ marginBottom: '0.4rem' }}>{t('detail.aiTitle')}</p>
+                  <p className="small" style={{ marginBottom: '0.5rem' }}>{t('detail.aiHint')}</p>
+                  {!ai && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={aiBusy || !user}
+                      onClick={loadAi}
+                    >
+                      {aiBusy ? t('detail.aiLoading') : t('detail.aiLoad')}
                     </button>
                   )}
+                  {aiError && <p className="small" style={{ color: 'var(--clear)' }}>{aiError}</p>}
+                  {ai?.content && (
+                    <div className="stack" style={{ gap: '0.45rem', marginTop: '0.5rem' }}>
+                      <p style={{ margin: 0, fontWeight: 650 }}>{ai.content.verdict}</p>
+                      <pre className="small" style={{ whiteSpace: 'pre-wrap', margin: 0, fontFamily: 'inherit' }}>
+                        {ai.content.rationale}
+                      </pre>
+                      {Array.isArray(ai.content.caveats) && ai.content.caveats.length > 0 && (
+                        <ul className="small" style={{ margin: 0, paddingLeft: '1.1rem' }}>
+                          {ai.content.caveats.map((c) => <li key={c}>{c}</li>)}
+                        </ul>
+                      )}
+                      <p className="small">
+                        {ai.fromCache ? t('detail.aiFromCache') : t('detail.aiFresh')}
+                        {ai.usage ? ` · ${ai.usage.count}/${ai.usage.limit}` : ''}
+                      </p>
+                      {ai.fromCache && (
+                        <button type="button" className="btn btn-ghost btn-sm" disabled={aiBusy} onClick={loadAi}>
+                          {t('detail.aiRefresh')}
+                        </button>
+                      )}
+                    </div>
+                  )}
                 </div>
-              )}
-            </div>
+              </>
+            )}
           </div>
         </div>
       </div>
