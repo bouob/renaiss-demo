@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
+import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { provenanceLabel } from '../lib/provenance.js';
@@ -173,7 +174,7 @@ export default function HoldingDetailModal({
       }, { authToken: token });
       setAi(res);
     } catch (err) {
-      setAiError(err?.message || t('detail.aiFailed'));
+      setAiError(merchantInsightErrorMessage(err, t));
     } finally {
       setAiBusy(false);
     }

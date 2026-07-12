@@ -247,7 +247,15 @@
     "aiLoad": "產生建議",
     "aiLoading": "產生中…",
     "aiNeedSignIn": "請登入使用 AI（需為你的庫存卡）。",
-    "aiFailed": "AI 建議失敗",
+    "aiFailed": "建議產生失敗，請再試一次。",
+    "aiErrors": {
+      "unavailable": "AI 建議暫時無法使用，請幾分鐘後再試。",
+      "quota": "今日 AI 建議額度已用完，明天重置。",
+      "rateLimited": "請求過於頻繁，稍候再試。",
+      "notOwned": "只有你庫存中的卡片才能產生 AI 建議。",
+      "invalidCert": "此鑑定序號無效。",
+      "timeout": "請求逾時，請再試一次。"
+    },
     "aiFromCache": "來自快取",
     "aiFresh": "剛產生",
     "aiRefresh": "重新產生（消耗每日額度）",
