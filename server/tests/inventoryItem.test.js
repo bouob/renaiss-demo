@@ -20,4 +20,12 @@ describe('inventoryItem shared module', () => {
     assert.equal(patch.priceUsdCents, 29531);
     assert.equal(typeof patch.updatedAt, 'string');
   });
+  it('sanitizeItem keeps valid addedVia + sourceWallet and drops invalid', () => {
+    const ok = sanitizeItem({ addedVia: 'scan', sourceWallet: '0xABCDEF0123456789ABCDEF0123456789ABCDEF01' }, 'PSA114662766');
+    assert.equal(ok.addedVia, 'scan');
+    assert.equal(ok.sourceWallet, '0xabcdef0123456789abcdef0123456789abcdef01');
+    const bad = sanitizeItem({ addedVia: 'wat', sourceWallet: 'nope' }, 'PSA114662766');
+    assert.ok(!('addedVia' in bad));
+    assert.ok(!('sourceWallet' in bad));
+  });
 });

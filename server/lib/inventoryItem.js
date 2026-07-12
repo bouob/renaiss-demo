@@ -12,6 +12,7 @@ const COST_SOURCES = new Set([
   'manual', 'pack_payment', 'pack_payment_split', 'pack_unmatched',
   'secondary_transfer', 'unavailable', 'buy',
 ]);
+const ADDED_VIA = new Set(['scan', 'cert', 'csv']);
 
 export function sanitizeWallet(v) {
   const w = typeof v === 'string' ? v.trim() : '';
@@ -57,12 +58,16 @@ export function sanitizeItem(body, cert) {
     costSource,
     onChainCostUsd: sanitizeMoney(body.onChainCostUsd),
     packPaymentTxHash: sanitizeString(body.packPaymentTxHash, 80),
+    addedVia: typeof body.addedVia === 'string' && ADDED_VIA.has(body.addedVia) ? body.addedVia : null,
+    sourceWallet: sanitizeWallet(body.sourceWallet),
     updatedAt: new Date().toISOString(),
   };
   if (patch.acquireType == null) delete patch.acquireType;
   if (patch.costSource == null) delete patch.costSource;
   if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;
   if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
+  if (patch.addedVia == null) delete patch.addedVia;
+  if (patch.sourceWallet == null) delete patch.sourceWallet;
   if (patch.wallet == null) delete patch.wallet;
   return patch;
 }
