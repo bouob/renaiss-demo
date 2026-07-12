@@ -8,7 +8,7 @@ Merchant-facing card shop intelligence on Renaiss market data. The app helps a d
 | Health check | https://merchant.dokipoki.app/api/health |
 | Optional path mount | https://dokipoki-dev.web.app/merchant/ |
 
-This repository owns the Merchant Copilot monorepo:
+The repository owns the Merchant Copilot monorepo:
 
 - `client/`: React + Vite frontend
 - `server/`: Express API deployed as `merchantApi`
