@@ -1,4 +1,4 @@
-# === 機敏資訊（PLAN.md §機敏資訊政策）——絕不 commit ===
+# === 機敏資訊 —— 絕不 commit ===
 .env
 .env.*
 !.env.example
@@ -10,6 +10,9 @@
 *.pem
 *.key
 gcp-*.json
+
+# === 內部文件（本機 docs/ 保留；不發佈到公開 GitHub）===
+docs/
 
 # === 依賴 / 建置產物 ===
 node_modules/
