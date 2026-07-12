@@ -270,7 +270,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       ...it,
       isDemo: isDemoItem(it, defaultWallet),
       alphaPct30d,
-      decision: detail.decision || 'hold',
+      // A merchant's saved override wins; otherwise fall back to the rules engine.
+      decision: it.decision ?? detail.decision ?? 'hold',
       damped: detail.damped,
       liquidityBand: detail.liquidityBand,
       fmvUsd,

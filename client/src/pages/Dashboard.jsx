@@ -119,7 +119,8 @@ export default function Dashboard({ user, getToken }) {
         href: mover?.href ?? item.href,
         priceUsdCents: mover?.priceUsdCents ?? item.priceUsdCents,
         alphaPct30d,
-        decision: detail.decision || 'hold',
+        // A merchant's saved override wins; otherwise fall back to the rules engine.
+        decision: item.decision ?? detail.decision ?? 'hold',
       };
     });
   }, [inventoryItems, movers, defaultWallet]);
