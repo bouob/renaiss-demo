@@ -36,6 +36,30 @@ describe('validateMerchantResponse', () => {
     assert.deepEqual(v.en.caveats, ['Low liquidity']);
   });
 
+  it('accepts locale key aliases from model output', () => {
+    const parsed = { en: goodLocale, 'zh-TW': goodLocale, jp: goodLocale };
+    const v = validateMerchantResponse(parsed);
+    assert.ok(v);
+    assert.equal(v.zh_TW.verdict, goodLocale.verdict);
+    assert.equal(v.ja.verdict, goodLocale.verdict);
+  });
+
+  it('normalizes rationale arrays and string caveats', () => {
+    const parsed = {
+      en: {
+        verdict: 'Promote this card while momentum is favorable.',
+        rationale: ['Momentum remains positive.', 'Liquidity looks decent.'],
+        caveats: 'Recent comps are still somewhat thin.',
+      },
+      zh_TW: goodLocale,
+      ja: goodLocale,
+    };
+    const v = validateMerchantResponse(parsed);
+    assert.ok(v);
+    assert.equal(v.en.rationale, '• Momentum remains positive.\n• Liquidity looks decent.');
+    assert.deepEqual(v.en.caveats, ['Recent comps are still somewhat thin.']);
+  });
+
   it('rejects missing locales', () => {
     assert.equal(validateMerchantResponse({ en: goodLocale, zh_TW: goodLocale }), null);
   });

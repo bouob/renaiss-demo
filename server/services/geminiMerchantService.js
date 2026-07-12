@@ -42,26 +42,51 @@ function normalizeText(value) {
   return text || null;
 }
 
+function normalizeRationale(value) {
+  if (Array.isArray(value)) {
+    const lines = value
+      .map(normalizeText)
+      .filter(Boolean)
+      .map((line) => (line.startsWith('•') ? line : `• ${line}`));
+    return lines.length ? lines.join('\n') : null;
+  }
+  return normalizeText(value);
+}
+
+function normalizeCaveats(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeText).filter(Boolean).slice(0, 3);
+  }
+  const single = normalizeText(value);
+  return single ? [single] : [];
+}
+
 function validateLocaleContent(content) {
   if (!content || typeof content !== 'object') return null;
   const verdict = normalizeText(content.verdict);
-  let rationale = normalizeText(content.rationale);
+  let rationale = normalizeRationale(content.rationale);
   if (!verdict || !rationale) return null;
   // Soften slightly vs the first ship: short but real sentences still pass.
   if (verdict.length < 6 || verdict.length > 320) return null;
   if (rationale.length > 900) rationale = rationale.slice(0, 900);
   if (rationale.replace(/\s+/g, '').length < 12) return null;
-  const caveats = Array.isArray(content.caveats)
-    ? content.caveats.map(normalizeText).filter(Boolean).slice(0, 3)
-    : [];
+  const caveats = normalizeCaveats(content.caveats);
   return { verdict, rationale, caveats };
 }
 
 export function validateMerchantResponse(parsed) {
   if (!parsed || typeof parsed !== 'object') return null;
+  const localeVariants = {
+    en: ['en'],
+    zh_TW: ['zh_TW', 'zh-TW', 'zhTW', 'zh'],
+    ja: ['ja', 'jp', 'japanese'],
+  };
   const result = {};
-  for (const key of ['en', 'zh_TW', 'ja']) {
-    const loc = validateLocaleContent(parsed[key]);
+  for (const [key, aliases] of Object.entries(localeVariants)) {
+    const raw = aliases
+      .map((alias) => parsed[alias])
+      .find((value) => value && typeof value === 'object');
+    const loc = validateLocaleContent(raw);
     if (!loc) return null;
     result[key] = loc;
   }

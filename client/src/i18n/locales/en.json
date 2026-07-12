@@ -7,7 +7,7 @@
   },
   "nav": {
     "brand": "Merchant Copilot",
-    "brandSub": "Dokipoki · Renaiss",
+    "brandSub": "Powered by Renaiss Index",
     "dashboard": "Dashboard",
     "inventory": "Inventory",
     "signIn": "Sign in",
@@ -97,6 +97,12 @@
     "moversTitle": "Movers from Your Inventory",
     "moversHint": "Alpha = card 30d return − index 30d. Buckets are merchandising actions (promote / hold / clear), not raw up/down price moves.",
     "moversEmpty": "No movers returned — empty market payload or keys unset.",
+    "actionAdvice": {
+      "label": "Recommended action",
+      "promote": "Prioritize exposure or promotion, and tune the ask to the current market price.",
+      "hold": "No action needed now; watch low-liquidity or insufficient-signal cards until more sales data arrives.",
+      "clear": "Consider prioritizing a clear-out and set a competitive ask based on market depth."
+    },
     "autoRotate": "auto",
     "autoPaused": "paused",
     "summaryPromote": "promote",
@@ -105,7 +111,12 @@
     "viaSeries": "via series",
     "liqOk": "liq✓",
     "noLiq": "no liq",
-    "top10Empty": "No constituents in payload."
+    "top10Empty": "No constituents in payload.",
+    "strengthLabel": "Strength",
+    "strengthStronger": "{{alpha}} stronger than the market",
+    "strengthWeaker": "{{alpha}} weaker than the market",
+    "strengthEven": "In line with the market",
+    "strengthBody": "How this card moved over the last 30 days compared with the market. This is relative performance — not your profit or loss."
   },
   "benchmark": {
     "tabIndex": "Index",
@@ -187,13 +198,11 @@
     "loadOkSales": "Loaded {{total}} cards · {{sales}} sales",
     "scanOkSales": "Scan OK · {{total}} held · {{sales}} sales",
     "scanOkPrefillSales": "Scan OK · {{prefill}}/{{total}} pack costs · {{sales}} sales",
-    "pack": "pack",
     "filters": {
       "all": "All",
       "promote": "Promote",
       "hold": "Hold",
-      "clear": "Clear",
-      "pack": "From pack"
+      "clear": "Clear"
     },
     "viewList": "List view",
     "viewGrid": "Grid view",
@@ -226,6 +235,9 @@
   },
   "detail": {
     "label": "Holding detail",
+    "tabsAria": "Holding detail sections",
+    "tabInventory": "Inventory",
+    "tabAdvanced": "Advanced",
     "fmv": "FMV",
     "cost": "Cost",
     "pnl": "PnL",
@@ -239,10 +251,11 @@
     "listPricePlaceholder": "Ask USD",
     "notes": "Notes",
     "notesPlaceholder": "Optional merchant notes",
-    "active": "Active",
-    "promote": "Promote",
-    "delist": "Delist",
-    "sold": "Sold",
+    "listingStatus": "Listing status",
+    "listedOn": "Listed",
+    "listedOff": "Not Listed",
+    "merchDecision": "Merchant decision",
+    "markSold": "Mark as Sold",
     "renaissIndex": "Renaiss Index ↗",
     "related": "Related ±1",
     "aiTitle": "AI merchant advice",

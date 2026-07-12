@@ -7,7 +7,7 @@
   },
   "nav": {
     "brand": "Merchant Copilot",
-    "brandSub": "Dokipoki · Renaiss",
+    "brandSub": "Powered by Renaiss Index",
     "dashboard": "儀表板",
     "inventory": "庫存",
     "signIn": "登入",
@@ -97,6 +97,12 @@
     "moversTitle": "您庫存中的變動卡",
     "moversHint": "Alpha = 卡 30 日報酬 − 指數 30 日。依超額報酬分桶：推售／留倉／出清（非單純漲跌）。點列開啟 Renaiss OS Index。",
     "moversEmpty": "尚無 movers — 市場 payload 為空或未設定金鑰。",
+    "actionAdvice": {
+      "label": "處置建議",
+      "promote": "優先曝光或推售，並依目前市場價格調整掛單。",
+      "hold": "暫不需處置；低流動性或訊號不足的卡，列入觀察並等待更多成交資料。",
+      "clear": "評估優先出清，並依市場深度設定具競爭力的掛單價格。"
+    },
     "autoRotate": "自動輪播",
     "autoPaused": "已暫停",
     "summaryPromote": "推售",
@@ -105,7 +111,12 @@
     "viaSeries": "經序列",
     "liqOk": "流動性✓",
     "noLiq": "無流動性訊號",
-    "top10Empty": "payload 中無成分卡。"
+    "top10Empty": "payload 中無成分卡。",
+    "strengthLabel": "強度",
+    "strengthStronger": "比市場表現強 {{alpha}}",
+    "strengthWeaker": "比市場表現弱 {{alpha}}",
+    "strengthEven": "與市場表現相當",
+    "strengthBody": "這張卡過去 30 天相對整體市場的漲跌幅。這是相對表現，並非你的實際盈虧。"
   },
   "benchmark": {
     "tabIndex": "指數",
@@ -184,13 +195,11 @@
     "loadOkSales": "已載入 {{total}} 張 · 售出 {{sales}} 筆",
     "scanOkSales": "掃描完成 · 持有 {{total}} · 售出 {{sales}}",
     "scanOkPrefillSales": "掃描完成 · 抽包成本 {{prefill}}/{{total}} · 售出 {{sales}}",
-    "pack": "抽包",
     "filters": {
       "all": "全部",
       "promote": "推售",
       "hold": "留倉",
-      "clear": "出清",
-      "pack": "抽包來源"
+      "clear": "出清"
     },
     "viewList": "列表檢視",
     "viewGrid": "網格檢視",
@@ -223,6 +232,9 @@
   },
   "detail": {
     "label": "持倉詳情",
+    "tabsAria": "持倉詳情分頁",
+    "tabInventory": "Inventory",
+    "tabAdvanced": "Advanced",
     "fmv": "FMV",
     "cost": "成本",
     "pnl": "損益",
@@ -236,10 +248,11 @@
     "listPricePlaceholder": "掛單 USD",
     "notes": "備註",
     "notesPlaceholder": "商家備註（選填）",
-    "active": "持有中",
-    "promote": "標為推售",
-    "delist": "下架",
-    "sold": "售出",
+    "listingStatus": "上架狀態",
+    "listedOn": "Listed",
+    "listedOff": "Not Listed",
+    "merchDecision": "卡商決策",
+    "markSold": "Mark as Sold",
     "renaissIndex": "Renaiss Index ↗",
     "related": "相鄰 ±1",
     "aiTitle": "AI 商家建議",
