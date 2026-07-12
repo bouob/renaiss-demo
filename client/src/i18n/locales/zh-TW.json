@@ -88,7 +88,7 @@
     "loading": "載入市場脈絡…",
     "loadError": "無法載入市場資料",
     "tickerLabel": "近期成交脈動",
-    "moversTitle": "Movers · 推售／留倉／出清",
+    "moversTitle": "您庫存中的變動卡",
     "moversHint": "Alpha = 卡 30 日報酬 − 指數 30 日。依超額報酬分桶：推售／留倉／出清（非單純漲跌）。點列開啟 Renaiss OS Index。",
     "moversEmpty": "尚無 movers — 市場 payload 為空或未設定金鑰。",
     "autoRotate": "自動輪播",

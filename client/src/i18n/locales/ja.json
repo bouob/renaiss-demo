@@ -88,7 +88,7 @@
     "loading": "マーケットを読み込み中…",
     "loadError": "マーケットデータの読み込みに失敗",
     "tickerLabel": "直近の成約パルス",
-    "moversTitle": "Movers · プッシュ／ホールド／クリア",
+    "moversTitle": "在庫のムーバー",
     "moversHint": "Alpha = カード30日リターン − 指数30日。行クリックで Renaiss OS Index の鑑定カードを開きます。",
     "moversEmpty": "movers なし — ペイロード空またはキー未設定。",
     "autoRotate": "自動",

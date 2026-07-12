@@ -54,11 +54,15 @@ router.get('/meta', requireAuth, async (req, res) => {
       .doc(req.uid)
       .collection('items')
       .get();
+    // Demo default cards live under the account's synthetic default wallet.
+    // Keep them visible when an existing user loads a real wallet; the cert
+    // document is still unique per account, so this does not duplicate tokens.
+    const defaultWallet = seed.wallet ? seed.wallet.toLowerCase() : null;
     const items = snap.docs
       .map((d) => ({ id: d.id, ...d.data() }))
       .filter((row) => {
         const w = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
-        return w === walletFilter;
+        return w === walletFilter || w === defaultWallet;
       });
     rememberHeldCerts(items.map((i) => i.cert || i.id));
     return res.json({ items, uid: req.uid, wallet: walletFilter });

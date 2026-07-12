@@ -47,6 +47,10 @@ export function sanitizeItem(body, cert) {
     grade: sanitizeString(body.grade, 40),
     imageUrl: sanitizeString(body.imageUrl, 500),
     priceUsdCents: sanitizeNonNegInt(body.priceUsdCents, { max: 999_999_999 * 100 }),
+    // Optional demo fallback used when the live movers feed is unavailable.
+    alphaPct30d: Number.isFinite(Number(body.alphaPct30d))
+      ? Math.max(-1, Math.min(10, Number(body.alphaPct30d)))
+      : null,
     href: sanitizeString(body.href, 300),
     notes: sanitizeString(body.notes, 1000),
     acquireType,

@@ -12,7 +12,7 @@ import {
   fetchSaleHistory,
   isConfigured as isChainConfigured,
 } from '../services/chainAdapters/bsc/renaissAdapter.js';
-import { getGradedFmv, isConfigured as isIndexConfigured } from '../services/renaissOsIndex.js';
+import { getGradedFmv, getGradedCardBrief, isConfigured as isIndexConfigured } from '../services/renaissOsIndex.js';
 import { rememberHeldCerts } from '../services/heldCertGate.js';
 import { runConcurrent } from '../utils/runConcurrent.js';
 
@@ -84,17 +84,22 @@ router.post('/scan', scanLimiter, async (req, res) => {
         const attrs = await fetchNFTAttributes(tokenId);
         const serial = attrs?.serial ?? attrs?.cert ?? attrs?.attributes?.serial ?? null;
         let fmv = null;
+        let brief = null;
         if (serial && isIndexConfigured()) {
-          fmv = await getGradedFmv(String(serial));
+          [fmv, brief] = await Promise.all([
+            getGradedFmv(String(serial)),
+            getGradedCardBrief(String(serial)),
+          ]);
         }
         const costInfo = costByToken.get(String(tokenId)) ?? {};
         return {
           tokenId: String(tokenId),
           serial: serial ? String(serial) : null,
-          name: attrs?.name ?? null,
-          setName: attrs?.setName ?? attrs?.set ?? null,
-          grade: attrs?.grade ?? attrs?.gradeLabel ?? null,
+          name: brief?.name ?? attrs?.name ?? null,
+          setName: brief?.setName ?? attrs?.setName ?? attrs?.set ?? null,
+          grade: brief?.gradeLabel ?? attrs?.grade ?? attrs?.gradeLabel ?? null,
           imageUrl: attrs?.imageUrl ?? attrs?.image ?? null,
+          indexImageUrl: brief?.imageUrl ?? brief?.imageUrlThumb ?? null,
           renaissFmv: fmv,
           found: Boolean(fmv?.found),
           acquireType: costInfo.acquireType ?? 'UNKNOWN',

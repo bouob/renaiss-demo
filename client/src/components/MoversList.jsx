@@ -1,11 +1,6 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
-
-/** Large cards per page (3–5 range; 4 fits most desktops). */
-const PAGE_SIZE = 4;
-/** Auto-rotate interval (ms). Pauses on hover / focus / reduced-motion. */
-const AUTO_MS = 4500;
 
 function formatPct(decimal) {
   if (!Number.isFinite(decimal)) return '—';
@@ -21,100 +16,77 @@ function formatUsdCents(cents) {
 
 export default function MoversList({ movers = [], emptyLabel }) {
   const { t } = useTranslation();
+  const [activeDecision, setActiveDecision] = useState('promote');
   const empty = emptyLabel || t('dashboard.moversEmpty');
-  const [page, setPage] = useState(1);
-  const [paused, setPaused] = useState(false);
-  const reducedMotion = useRef(false);
-
-  useEffect(() => {
-    reducedMotion.current = typeof window !== 'undefined'
-      && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
-  }, []);
-
-  useEffect(() => {
-    setPage(1);
-  }, [movers.length]);
-
-  const totalPages = Math.max(1, Math.ceil(movers.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const pageItems = useMemo(() => {
-    const start = (safePage - 1) * PAGE_SIZE;
-    return movers.slice(start, start + PAGE_SIZE);
-  }, [movers, safePage]);
-
-  // Auto carousel: 1 → 2 → … → last → 1
-  useEffect(() => {
-    if (totalPages <= 1 || paused || reducedMotion.current) return undefined;
-    const id = window.setInterval(() => {
-      setPage((p) => {
-        const cur = Math.min(p, totalPages);
-        return cur >= totalPages ? 1 : cur + 1;
-      });
-    }, AUTO_MS);
-    return () => window.clearInterval(id);
-  }, [totalPages, paused, movers.length]);
+  const decisions = ['promote', 'hold', 'clear'];
+  const counts = useMemo(() => decisions.reduce((result, decision) => {
+    result[decision] = movers.filter((m) => (m.decision || 'hold') === decision).length;
+    return result;
+  }, {}), [movers]);
+  const visibleMovers = movers.filter((m) => (m.decision || 'hold') === activeDecision);
 
   if (!movers.length) {
     return <div className="empty">{empty}</div>;
   }
 
-  const goPrev = () => setPage((p) => (p <= 1 ? totalPages : p - 1));
-  const goNext = () => setPage((p) => (p >= totalPages ? 1 : p + 1));
-
   return (
-    <div
-      className="movers-gallery"
-      onMouseEnter={() => setPaused(true)}
-      onMouseLeave={() => setPaused(false)}
-      onFocusCapture={() => setPaused(true)}
-      onBlurCapture={(e) => {
-        if (!e.currentTarget.contains(e.relatedTarget)) setPaused(false);
-      }}
-    >
-      <div className="movers-grid" key={safePage}>
-        {pageItems.map((m, i) => {
+    <div className="movers-list-wrap">
+      <div className="movers-tabs" role="tablist" aria-label={t('dashboard.moversTitle')}>
+        {decisions.map((decision) => (
+          <button
+            key={decision}
+            type="button"
+            role="tab"
+            aria-selected={activeDecision === decision}
+            className={`movers-tab ${decision} ${activeDecision === decision ? 'active' : ''}`}
+            onClick={() => setActiveDecision(decision)}
+          >
+            <span>{t(`decision.${decision}`, { defaultValue: decision })}</span>
+            <span className="movers-tab-count">{counts[decision]}</span>
+          </button>
+        ))}
+      </div>
+
+      <div className="movers-list" role="table" aria-label={t(`decision.${activeDecision}`, { defaultValue: activeDecision })}>
+        <div className="movers-list-header" role="row">
+        <span role="columnheader">{t('dashboard.headerCard', { defaultValue: 'Card' })}</span>
+        <span role="columnheader" className="movers-list-align">{t('dashboard.marketPrice', { defaultValue: 'Market price' })}</span>
+        <span role="columnheader" className="movers-list-align">30d</span>
+        <span role="columnheader" className="movers-list-align">α</span>
+        </div>
+
+        <div className="movers-list-body">
+        {visibleMovers.map((m, i) => {
           const key = m.slug || m.href || `${m.name}-${m.cardNumber}-${i}`;
-          const decision = m.decision || 'hold';
-          const decisionLabel = t(`decision.${decision}`, { defaultValue: decision });
           const indexUrl = resolveIndexUrl(m.href);
           const thumb = m.imageUrl || m.imageUrlThumb;
           const alpha = m.alphaPct30d;
           const alphaClass = Number.isFinite(alpha)
             ? (alpha >= 0 ? 'text-pos' : 'text-neg')
             : '';
+          const name = m.name ?? t('common.card');
+          const meta = [m.grade, m.setName || m.setCode, m.cardNumber]
+            .filter(Boolean)
+            .join(' · ') || t('common.emDash');
 
-          const card = (
+          const row = (
             <>
-              <div className="movers-card-art">
+              <div className="movers-list-card-cell">
                 {thumb ? (
                   <img src={thumb} alt="" loading="lazy" />
                 ) : (
-                  <div className="thumb-fallback movers-card-fallback">{t('common.card')}</div>
+                  <div className="thumb-fallback movers-list-thumb-fallback">{t('common.card')}</div>
                 )}
-                <span
-                  className={`badge movers-card-badge ${decision}`}
-                  title={t(`decision.tooltip.${decision}`, { defaultValue: '' })}
-                >
-                  {decisionLabel}
-                </span>
-              </div>
-              <div className="movers-card-body">
-                <strong className="movers-card-name">
-                  {m.name ?? t('common.card')}
-                  {indexUrl ? ' ↗' : ''}
-                </strong>
-                <div className="small">
-                  {[m.grade, m.setName || m.setCode, m.cardNumber].filter(Boolean).join(' · ')
-                    || t('common.emDash')}
-                </div>
-                <div className="movers-card-metrics">
-                  <span>{formatUsdCents(m.priceUsdCents)}</span>
-                  <span className={alphaClass}>α {formatPct(alpha)}</span>
-                </div>
-                <div className="small">
-                  30d {formatPct(m.deltaPct30d)}
+                <div className="movers-list-card-copy">
+                  <strong title={name}>{name}{indexUrl ? ' ↗' : ''}</strong>
+                  <span title={meta}>{meta}</span>
                 </div>
               </div>
+              <span className="movers-list-value">{formatUsdCents(m.priceUsdCents)}</span>
+              <span className={`movers-list-value ${Number.isFinite(m.deltaPct30d) && m.deltaPct30d < 0 ? 'text-neg' : 'text-pos'}`}>
+                {formatPct(m.deltaPct30d)}
+              </span>
+              <span className={`movers-list-value ${alphaClass}`}> {formatPct(alpha)}</span>
             </>
           );
 
@@ -122,81 +94,23 @@ export default function MoversList({ movers = [], emptyLabel }) {
             return (
               <a
                 key={key}
-                className="movers-card movers-card-link"
+                className="movers-list-row movers-list-row-link"
                 href={indexUrl}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={(e) => openIndexPage(m.href, e)}
+                role="row"
               >
-                {card}
+                {row}
               </a>
             );
           }
 
-          return (
-            <div key={key} className="movers-card movers-card-static">
-              {card}
-            </div>
-          );
-        })}
-      </div>
-
-      {totalPages > 1 && (
-        <div className="movers-controls">
-          <div className="pagination">
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={goPrev}
-              aria-label={t('common.previous')}
-            >
-              {t('common.previous')}
-            </button>
-            <span className="small movers-page-meta">
-              {t('common.pageOf', { page: safePage, total: totalPages })}
-              {' · '}
-              {movers.length}
-              {!paused && !reducedMotion.current ? (
-                <span className="movers-auto-hint"> · {t('dashboard.autoRotate', { defaultValue: 'auto' })}</span>
-              ) : (
-                <span className="movers-auto-hint"> · {t('dashboard.autoPaused', { defaultValue: 'paused' })}</span>
-              )}
-            </span>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={goNext}
-              aria-label={t('common.next')}
-            >
-              {t('common.next')}
-            </button>
-          </div>
-          <div className="movers-dots" role="tablist" aria-label={t('dashboard.moversTitle')}>
-            {Array.from({ length: totalPages }, (_, i) => {
-              const n = i + 1;
-              return (
-                <button
-                  key={n}
-                  type="button"
-                  role="tab"
-                  aria-selected={n === safePage}
-                  className={`movers-dot ${n === safePage ? 'active' : ''}`}
-                  onClick={() => setPage(n)}
-                  title={`${n}/${totalPages}`}
-                />
-              );
-            })}
-          </div>
-          {!reducedMotion.current && (
-            <div
-              className={`movers-progress ${paused ? 'paused' : ''}`}
-              key={`progress-${safePage}-${paused}`}
-              style={{ '--auto-ms': `${AUTO_MS}ms` }}
-              aria-hidden="true"
-            />
-          )}
+          return <div key={key} className="movers-list-row" role="row">{row}</div>;
+          })}
+          {!visibleMovers.length && <div className="empty movers-list-empty">{empty}</div>}
         </div>
-      )}
+      </div>
     </div>
   );
 }

@@ -10,13 +10,16 @@ import {
   bulkSales,
 } from '../lib/inventoryApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
-import { classifyMerchantDecisionDetail } from '../lib/merchantCopilot.js';
+import {
+  classifyMerchantDecisionDetail,
+  DEMO_PROMOTE_ALPHA_BY_CERT,
+} from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import { parseMoney } from '../lib/moneyInput.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
-const PAGE_SIZE = 12;
+const PAGE_SIZE = 50;
 const LAST_WALLET_KEY = 'merchant_last_wallet';
 
 function formatUsd(n) {
@@ -34,6 +37,34 @@ function suggestedSell(item) {
 function normalizeWallet(addr) {
   const w = String(addr ?? '').trim();
   return /^0x[0-9a-fA-F]{40}$/.test(w) ? w.toLowerCase() : '';
+}
+
+async function hydrateIndexMetadata(rows) {
+  const updates = new Map();
+  const candidates = rows.filter((row) => row?.cert && !row.indexImageUrl);
+  for (let i = 0; i < candidates.length; i += 4) {
+    const batch = candidates.slice(i, i + 4);
+    const results = await Promise.all(batch.map(async (row) => {
+      try {
+        const res = await fetchCard(row.cert);
+        const brief = res?.brief;
+        if (!brief) return null;
+        return {
+          cert: row.cert,
+          name: brief.name ?? row.name ?? null,
+          setName: brief.setName ?? row.setName ?? null,
+          grade: brief.gradeLabel ?? row.grade ?? null,
+          indexImageUrl: brief.imageUrl ?? brief.imageUrlThumb ?? null,
+        };
+      } catch {
+        return null;
+      }
+    }));
+    for (const result of results) {
+      if (result?.cert && result.indexImageUrl) updates.set(String(result.cert), result);
+    }
+  }
+  return updates;
 }
 
 export default function Inventory({ user, getToken, firebaseOk }) {
@@ -100,20 +131,27 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }, [user]);
 
-  // First sign-in with no stored wallet: discover and bind the server-seeded
-  // default portfolio so the grid is populated without manual wallet entry.
+  // Restore a saved wallet when available. If it has no saved rows, discover
+  // and bind the server-seeded default portfolio so existing users also see
+  // the one-time expansion without manually entering a wallet.
   useEffect(() => {
     if (!user || defaultTried || boundWallet) return;
     let stored = '';
     try {
       stored = normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
     } catch { /* ignore */ }
-    if (stored) return;
     setDefaultTried(true);
     (async () => {
       try {
         const token = await getToken();
         if (!token) return;
+        if (stored) {
+          const saved = await fetchMeta({ authToken: token, wallet: stored });
+          if (Array.isArray(saved?.items) && saved.items.length > 0) {
+            await loadWalletInventory(stored, { quiet: true });
+            return;
+          }
+        }
         const res = await fetchMeta({ authToken: token });
         const discovered = normalizeWallet(res?.wallet || '');
         if (discovered) await loadWalletInventory(discovered, { quiet: true });
@@ -181,6 +219,23 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       ]);
       const list = Array.isArray(metaRes?.items) ? metaRes.items : [];
       setItems(list);
+      // Older saved rows may still contain the chain/NFT image. Refresh their
+      // display metadata from the Index so the inventory stays consistent with
+      // newly scanned cards.
+      void hydrateIndexMetadata(list).then(async (updates) => {
+        if (!updates.size) return;
+        const hydrated = list.map((row) => ({
+          ...row,
+          ...(updates.get(String(row.cert)) || {}),
+        }));
+        setItems((current) => current.map((row) => ({
+          ...row,
+          ...(updates.get(String(row.cert)) || {}),
+        })));
+        try {
+          await bulkMeta(hydrated, { authToken: token });
+        } catch { /* keep the refreshed data visible even if persistence fails */ }
+      });
       setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
       setSalesSummary(salesRes?.summary ?? null);
       setBoundWallet(addr);
@@ -239,7 +294,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       (it.name && m.name && String(it.name).toLowerCase() === String(m.name).toLowerCase())
       || (it.href && m.href && it.href === m.href),
     );
-    const alphaPct30d = mover?.alphaPct30d ?? it.alphaPct30d ?? null;
+    const alphaPct30d = mover?.alphaPct30d
+      ?? it.alphaPct30d
+      ?? DEMO_PROMOTE_ALPHA_BY_CERT[it.cert]
+      ?? null;
     const detail = classifyMerchantDecisionDetail({
       alphaPct30d,
       thinMarketData: mover?.thinMarketData,
@@ -358,6 +416,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           setName: h.setName ?? prev?.setName ?? null,
           grade: h.grade ?? prev?.grade ?? null,
           imageUrl: h.imageUrl ?? prev?.imageUrl ?? null,
+          indexImageUrl: h.indexImageUrl ?? prev?.indexImageUrl ?? null,
           priceUsdCents: h.renaissFmv?.priceUsdCents ?? prev?.priceUsdCents ?? null,
           href: h.renaissFmv?.href ?? prev?.href ?? null,
           onChainCostUsd: packCost,
@@ -436,6 +495,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         setName: res.brief?.setName ?? null,
         grade: res.brief?.gradeLabel ?? res.fmv?.gradeLabel ?? null,
         imageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null,
+        indexImageUrl: res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null,
         priceUsdCents: res.fmv?.priceUsdCents ?? res.brief?.priceUsdCents ?? null,
         href: res.fmv?.href ?? res.brief?.href ?? null,
         series30d: res.series30d ?? [],
@@ -733,44 +793,48 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           <div className="empty">{t('inventory.filterEmpty')}</div>
         ) : (
           <>
-            <div className="inventory-grid">
+            <div className="inventory-list" role="list">
+              <div className="inventory-list-head" aria-hidden="true">
+                <span className="inventory-list-col-card">{t('inventory.yourInventory')}</span>
+                <span className="inventory-list-col-num">{t('inventory.statsFmv')}</span>
+                <span className="inventory-list-col-num">{t('inventory.statsUnrealized')}</span>
+                <span className="inventory-list-col-badge" />
+              </div>
               {pageItems.map((it) => {
                 const cert = it.cert || it.id;
                 const decision = it.decision || 'hold';
+                const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
                 return (
                   <button
                     key={cert}
                     type="button"
-                    className="inventory-tile"
+                    role="listitem"
+                    className="inventory-row"
                     onClick={() => setSelectedCert(cert)}
                   >
-                    <div className="inventory-tile-art">
-                      {it.imageUrl ? (
-                        <img src={it.imageUrl} alt="" loading="lazy" />
-                      ) : (
-                        <div className="thumb-fallback inventory-tile-fallback">{t('common.card')}</div>
-                      )}
-                      <span className={`badge inventory-tile-badge ${decision}`}>
-                        {t(`decision.${decision}`)}
-                      </span>
-                    </div>
-                    <div className="inventory-tile-body">
-                      <strong className="inventory-tile-name">{it.name || cert}</strong>
-                      <div className="small">
-                        {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
-                      </div>
-                      <div className="inventory-tile-prices">
-                        <span>{formatUsd(it.fmvUsd)}</span>
-                        {Number.isFinite(it.pnl) && (
-                          <span className={it.pnl >= 0 ? 'text-pos' : 'text-neg'}>
-                            {it.pnl >= 0 ? '+' : ''}{formatUsd(it.pnl)}
-                          </span>
+                    <div className="inventory-row-card">
+                      <div className="inventory-row-art">
+                        {it.indexImageUrl ? (
+                          <img src={it.indexImageUrl} alt="" loading="lazy" />
+                        ) : (
+                          <div className="thumb-fallback inventory-row-fallback">{t('common.card')}</div>
                         )}
                       </div>
-                      {it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT' ? (
-                        <span className="chip" style={{ marginTop: '0.25rem' }}>{t('inventory.pack')}</span>
-                      ) : null}
+                      <div className="inventory-row-meta">
+                        <strong className="inventory-row-name">{it.name || cert}</strong>
+                        <span className="small inventory-row-sub">
+                          {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
+                          {isPack ? <span className="chip inventory-row-pack">{t('inventory.pack')}</span> : null}
+                        </span>
+                      </div>
                     </div>
+                    <span className="inventory-row-num">{formatUsd(it.fmvUsd)}</span>
+                    <span className={`inventory-row-num ${Number.isFinite(it.pnl) ? (it.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}`}>
+                      {Number.isFinite(it.pnl) ? `${it.pnl >= 0 ? '+' : ''}${formatUsd(it.pnl)}` : '—'}
+                    </span>
+                    <span className={`badge inventory-row-badge ${decision}`}>
+                      {t(`decision.${decision}`)}
+                    </span>
                   </button>
                 );
               })}

@@ -185,9 +185,9 @@ export default function HoldingDetailModal({
 
         <div className="modal-body modal-body-detail">
           <div className="modal-art">
-            {item.imageUrl && !artBroken ? (
+            {item.indexImageUrl && !artBroken ? (
               <img
-                src={item.imageUrl}
+                src={item.indexImageUrl}
                 alt=""
                 referrerPolicy="no-referrer"
                 onError={() => setArtBroken(true)}

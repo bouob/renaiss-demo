@@ -88,7 +88,7 @@
     "loading": "Loading market context…",
     "loadError": "Failed to load market data",
     "tickerLabel": "Recent sales pulse",
-    "moversTitle": "Movers · promote / hold / clear",
+    "moversTitle": "Movers from Your Inventory",
     "moversHint": "Alpha = card 30d return − index 30d. Buckets are merchandising actions (promote / hold / clear), not raw up/down price moves.",
     "moversEmpty": "No movers returned — empty market payload or keys unset.",
     "autoRotate": "auto",
