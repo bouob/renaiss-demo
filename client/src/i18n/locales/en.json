@@ -38,6 +38,12 @@
     "unavailable": "No cost",
     "buy": "On-chain buy"
   },
+  "confidence": {
+    "prime": "Prime",
+    "high": "High",
+    "medium": "Medium",
+    "low": "Low"
+  },
   "common": {
     "loading": "Loading…",
     "close": "Close",
@@ -230,8 +236,15 @@
     "aiFresh": "Freshly generated",
     "aiRefresh": "Regenerate (uses daily quota)",
     "adjacent": "Adjacent certs",
-    "gated": "Gated — not in scan allowlist.",
+    "adjacentHint": "Cards graded either side of this serial (±1). Consecutive serials are often the same submission batch.",
+    "adjacentDelta": "Serial {{delta}}",
+    "gated": "Not in the lookup allowlist yet — retry.",
     "noNeighbors": "No found neighbors.",
+    "adjacentInvalidCert": "This cert format has no ±1 neighbors.",
+    "adjacentUnavailable": "Renaiss index is not configured — adjacency unavailable.",
+    "adjacentRateLimited": "Too many lookups — try again in a minute.",
+    "adjacentFailed": "Adjacent lookup failed.",
+    "adjacentRetry": "Retry",
     "costSource": "cost source"
   },
   "sales": {

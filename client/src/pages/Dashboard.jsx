@@ -6,6 +6,7 @@ import { fetchMeta, fetchTicker } from '../lib/inventoryApi.js';
 import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 import { readLastWallet } from '../lib/lastWallet.js';
+import { formatUsdCents } from '../lib/money.js';
 import MoversList from '../components/MoversList.jsx';
 import InfoHint from '../components/InfoHint.jsx';
 import BenchmarkPanel from '../components/BenchmarkPanel.jsx';
@@ -114,7 +115,7 @@ export default function Dashboard({ user, getToken }) {
                     <>
                       <strong>{tr.name ?? t('common.emDash')}</strong>
                       <div className="small">
-                        {tr.grade ?? ''} · {Number.isFinite(tr.priceUsdCents) ? `$${(tr.priceUsdCents / 100).toFixed(2)}` : t('common.emDash')}
+                        {tr.grade ?? ''} · {formatUsdCents(tr.priceUsdCents)}
                         {url ? ' · ↗' : ''}
                       </div>
                       <div className="small">

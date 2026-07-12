@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
+import { formatUsdCents } from '../lib/money.js';
 
 const PAGE_SIZE = 3;
 const AUTO_MS = 4500;
@@ -69,7 +70,7 @@ export default function TopBoardGallery({ cards = [] }) {
                 <strong title={card.name}>{card.name ?? t('common.card')}{url ? ' ↗' : ''}</strong>
                 <span>{[card.grade, card.setCode || card.setName, card.cardNumber].filter(Boolean).join(' · ') || t('common.emDash')}</span>
                 <div className="top-board-card-metric">
-                  <span>{Number.isFinite(card.priceUsdCents) ? `$${(card.priceUsdCents / 100).toFixed(2)}` : t('common.emDash')}</span>
+                  <span>{formatUsdCents(card.priceUsdCents)}</span>
                   <span className={Number.isFinite(card.deltaPct) && card.deltaPct < 0 ? 'text-neg' : 'text-pos'}>
                     {formatPct(card.deltaPct)}
                   </span>

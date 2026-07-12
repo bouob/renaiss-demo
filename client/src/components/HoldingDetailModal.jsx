@@ -5,6 +5,8 @@ import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventor
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { provenanceLabel } from '../lib/provenance.js';
+import { formatUsdCents } from '../lib/money.js';
+import { adjacentNotice } from '../lib/adjacent.js';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
@@ -31,6 +33,7 @@ export default function HoldingDetailModal({
   const [returnPct, setReturnPct] = useState(item?.returnPct30d ?? null);
   const [related, setRelated] = useState(null);
   const [relatedBusy, setRelatedBusy] = useState(false);
+  const [brokenThumbs, setBrokenThumbs] = useState(() => new Set());
   const [costDraft, setCostDraft] = useState(
     Number.isFinite(item?.cost) ? String(item.cost) : '',
   );
@@ -60,6 +63,7 @@ export default function HoldingDetailModal({
     setSeries(Array.isArray(item.series30d) ? item.series30d : []);
     setReturnPct(item.returnPct30d ?? null);
     setRelated(null);
+    setBrokenThumbs(new Set());
     setAi(null);
     setAiError(null);
     setArtBroken(false);
@@ -93,14 +97,32 @@ export default function HoldingDetailModal({
 
   if (!item) return null;
 
+  /**
+   * GET /related/:cert is ownership-gated. A signed-in user passes via the
+   * Firestore inventory check, but a guest (no Firebase → no uid) can only
+   * pass via the server's in-memory allowlist — and the sole thing that puts a
+   * cert in it is `rememberHeldCert()` inside GET /card/:cert (server/routes/card.js).
+   * That request is the one this modal fires on mount, which is why the button
+   * stays disabled until it lands: click too early and a guest gets `not_held`.
+   *
+   * The allowlist is also per-instance, so in deployment /card and /related can
+   * hit different Cloud Function instances and a guest sees a spurious
+   * `not_held`. That is why every failure state here is retryable rather than
+   * terminal — see lib/adjacent.js.
+   */
   async function loadRelated() {
     setRelatedBusy(true);
     try {
       const token = user ? await getToken() : null;
       const res = await fetchRelated(cert, { authToken: token });
       setRelated(res);
-    } catch {
-      setRelated({ cert, neighbors: [], gated: true, reason: 'error' });
+    } catch (err) {
+      setRelated({
+        cert,
+        neighbors: [],
+        gated: true,
+        reason: err?.status === 429 ? 'rate_limited' : 'error',
+      });
     } finally {
       setRelatedBusy(false);
     }
@@ -164,6 +186,71 @@ export default function HoldingDetailModal({
   const packTx = item.packPaymentTxHash
     ? `${String(item.packPaymentTxHash).slice(0, 8)}…${String(item.packPaymentTxHash).slice(-4)}`
     : null;
+
+  const notice = adjacentNotice(related);
+
+  function renderNeighbor(n) {
+    const url = resolveIndexUrl(n.href);
+    const thumb = n.imageUrlThumb || n.imageUrl;
+    const name = n.name ?? t('common.card');
+    const meta = [n.gradeLabel, n.setName, n.cardNumber].filter(Boolean).join(' · ')
+      || t('common.emDash');
+    // The serial sign is direction, not sentiment — a −1 neighbor is not bad
+    // news, so this deliberately avoids the green/red .chip.pos/.chip.neg pair.
+    const sign = n.delta > 0 ? '+1' : '-1';
+
+    const body = (
+      <>
+        <span
+          className={`adjacent-delta ${n.delta > 0 ? 'up' : 'down'}`}
+          title={t('detail.adjacentDelta', { delta: sign })}
+        >
+          {sign}
+        </span>
+        <div className="adjacent-list-card-cell">
+          {thumb && !brokenThumbs.has(n.cert) ? (
+            <img
+              src={thumb}
+              alt=""
+              loading="lazy"
+              referrerPolicy="no-referrer"
+              onError={() => setBrokenThumbs((prev) => new Set(prev).add(n.cert))}
+            />
+          ) : (
+            <div className="thumb-fallback adjacent-list-thumb-fallback">{t('common.noArt')}</div>
+          )}
+          <div className="adjacent-list-card-copy">
+            <strong title={name}>{name}{url ? ' ↗' : ''}</strong>
+            <span title={meta}>{meta}</span>
+            <code className="adjacent-list-cert">{n.cert}</code>
+          </div>
+        </div>
+        <div className="adjacent-list-values">
+          <span className="movers-list-value">{formatUsdCents(n.priceUsdCents)}</span>
+          {n.confidence && (
+            <span className="chip adjacent-confidence">
+              {t(`confidence.${n.confidence}`, {
+                defaultValue: String(n.confidence).slice(0, 16),
+              })}
+            </span>
+          )}
+        </div>
+      </>
+    );
+
+    if (!url) return <div className="adjacent-list-row">{body}</div>;
+    return (
+      <a
+        className="adjacent-list-row adjacent-list-row-link"
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        onClick={(e) => openIndexPage(n.href, e)}
+      >
+        {body}
+      </a>
+    );
+  }
 
   return (
     <div className="modal-backdrop" role="presentation" onClick={onClose}>
@@ -337,7 +424,14 @@ export default function HoldingDetailModal({
                   {t('detail.renaissIndex')}
                 </button>
               )}
-              <button type="button" className="btn btn-ghost btn-sm" disabled={relatedBusy} onClick={loadRelated}>
+              {/* Disabled until the mount-time /card lookup lands — it is what
+                  allowlists this cert for the /related gate (see loadRelated). */}
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                disabled={relatedBusy || seriesLoading}
+                onClick={loadRelated}
+              >
                 {relatedBusy ? '…' : t('detail.related')}
               </button>
             </div>
@@ -381,21 +475,32 @@ export default function HoldingDetailModal({
             </div>
 
             {related && (
-              <div>
+              <div className="adjacent-section">
                 <p className="label">{t('detail.adjacent')}</p>
-                {related.gated && related.reason === 'not_held' && (
-                  <div className="empty">{t('detail.gated')}</div>
+                <p className="small muted">{t('detail.adjacentHint')}</p>
+                {notice ? (
+                  <div className="empty empty-actionable">
+                    <span>{t(notice.key)}</span>
+                    {notice.retryable && (
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={relatedBusy}
+                        onClick={loadRelated}
+                      >
+                        {t('detail.adjacentRetry')}
+                      </button>
+                    )}
+                  </div>
+                ) : (
+                  <ul className="adjacent-list">
+                    {related.neighbors.map((n) => (
+                      <li key={n.cert} className="adjacent-list-item">
+                        {renderNeighbor(n)}
+                      </li>
+                    ))}
+                  </ul>
                 )}
-                {!related.gated && Array.isArray(related.neighbors) && related.neighbors.length === 0 && (
-                  <div className="empty">{t('detail.noNeighbors')}</div>
-                )}
-                <ul className="list list-compact">
-                  {(related.neighbors || []).map((n) => (
-                    <li key={n.cert || n.href}>
-                      <span className="small">{n.cert || n.name}</span>
-                    </li>
-                  ))}
-                </ul>
               </div>
             )}
           </div>

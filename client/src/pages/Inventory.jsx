@@ -18,6 +18,7 @@ import {
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import { parseMoney } from '../lib/moneyInput.js';
 import { normalizeWallet, rememberLastWallet } from '../lib/lastWallet.js';
+import { centsToUsd } from '../lib/money.js';
 import { provenanceLabel } from '../lib/provenance.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
@@ -31,7 +32,8 @@ function formatUsd(n) {
 
 function suggestedSell(item) {
   if (Number.isFinite(item.listPrice)) return item.listPrice;
-  if (Number.isFinite(item.priceUsdCents)) return (item.priceUsdCents / 100) * 1.05;
+  const indexUsd = centsToUsd(item.priceUsdCents);
+  if (indexUsd != null) return indexUsd * 1.05;
   if (Number.isFinite(item.fmvUsd)) return item.fmvUsd * 1.05;
   return null;
 }
@@ -169,9 +171,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       marketDataLoaded: true,
       liquidityScore: mover?.liquidityScore,
     });
-    const fmvUsd = Number.isFinite(it.priceUsdCents)
-      ? it.priceUsdCents / 100
-      : (Number.isFinite(mover?.priceUsdCents) ? mover.priceUsdCents / 100 : null);
+    const fmvUsd = centsToUsd(it.priceUsdCents) ?? centsToUsd(mover?.priceUsdCents);
     const cost = Number.isFinite(it.cost)
       ? it.cost
       : (Number.isFinite(it.onChainCostUsd) ? it.onChainCostUsd : null);
