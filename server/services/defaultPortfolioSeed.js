@@ -19,7 +19,13 @@ function fakeMoneyFromFmv(priceUsdCents, cert, salt) {
 // Demo-only fallback signals for marquee cards. Live /movers data wins in the
 // client whenever it is available, so these keep the offline demo presentable
 // without changing live classifications.
-const DEMO_PROMOTE_ALPHA_BY_CERT = new Map([
+//
+// SOURCE OF TRUTH. Mirrored in client/src/lib/merchantCopilot.js, which needs
+// the same values in guest mode (no Firebase → no server-side seeding, so the
+// rows never carry a persisted alphaPct30d). The client cannot import server
+// code, so the copy is deliberate; tests/demoAlphaParity.test.js fails the
+// build if the two drift.
+export const DEMO_PROMOTE_ALPHA_BY_CERT = new Map([
   ['PSA122603338', 0.12], // 25th Anniversary Birthday Pikachu
   ['PSA161025105', 0.09], // Umbreon ex
   ['PSA151789461', 0.08], // Grey Felt Hat Pikachu
