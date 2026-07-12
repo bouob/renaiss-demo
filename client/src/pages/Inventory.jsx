@@ -18,6 +18,7 @@ import {
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import { parseMoney } from '../lib/moneyInput.js';
 import { normalizeWallet, rememberLastWallet } from '../lib/lastWallet.js';
+import { provenanceLabel } from '../lib/provenance.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
@@ -26,17 +27,6 @@ const PAGE_SIZE = 50;
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
   return `$${n.toFixed(2)}`;
-}
-
-export function provenanceLabel(item, t) {
-  const date = item?.createdAt ? new Date(item.createdAt).toLocaleDateString() : '';
-  const wallet = item?.sourceWallet ? `${item.sourceWallet.slice(0, 6)}…${item.sourceWallet.slice(-4)}` : '';
-  switch (item?.addedVia) {
-    case 'scan': return t('inventory.provenanceScan', { wallet, date });
-    case 'cert': return t('inventory.provenanceCert', { date });
-    case 'csv': return t('inventory.provenanceCsv', { date });
-    default: return item?.createdAt ? t('inventory.provenanceUnknown', { date }) : '';
-  }
 }
 
 function suggestedSell(item) {

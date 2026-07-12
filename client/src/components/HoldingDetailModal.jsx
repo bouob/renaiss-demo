@@ -4,7 +4,7 @@ import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
-import { provenanceLabel } from '../pages/Inventory.jsx';
+import { provenanceLabel } from '../lib/provenance.js';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';

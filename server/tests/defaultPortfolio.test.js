@@ -10,7 +10,15 @@ function makeFakeDb() {
     async get() { return { exists: store.has(path), data: () => store.get(path) }; },
     collection(name) { return makeCollectionRef(`${path}/${name}`); },
   });
-  const makeCollectionRef = (path) => ({ doc(id) { return makeDocRef(`${path}/${id}`); } });
+  const makeCollectionRef = (path) => ({
+    doc(id) { return makeDocRef(`${path}/${id}`); },
+    async get() {
+      const docs = [...store.keys()]
+        .filter((key) => key.startsWith(`${path}/`) && !key.slice(path.length + 1).includes('/'))
+        .map((key) => ({ id: key.slice(path.length + 1), data: () => store.get(key) }));
+      return { docs };
+    },
+  });
   return {
     _store: store,
     collection(name) { return makeCollectionRef(name); },

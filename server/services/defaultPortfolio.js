@@ -37,25 +37,26 @@ export async function ensureDefaultPortfolio(uid, db = adminDb) {
     const now = new Date().toISOString();
     const batch = db.batch();
     const itemsCol = parentRef.collection('items');
+    // One collection read instead of a sequential get() per seed card: this runs
+    // inside GET /meta, and the seed list is ~50 cards.
+    const existingSnap = await itemsCol.get();
+    const existing = new Map(existingSnap.docs.map((d) => [d.id, d.data() || {}]));
+
     for (const item of expansionItems) {
-      const ref = itemsCol.doc(item.cert);
-      const existing = await ref.get();
-      if (existing.exists) continue; // never overwrite an existing token
+      if (existing.has(item.cert)) continue; // never overwrite an existing token
       const patch = sanitizeItem({ ...item, wallet: defaultWallet }, item.cert);
-      batch.set(ref, { ...patch, createdAt: patch.updatedAt }, { merge: true });
+      batch.set(itemsCol.doc(item.cert), { ...patch, createdAt: patch.updatedAt }, { merge: true });
     }
-    if (seededVersion < DEFAULT_PORTFOLIO_EXPANSION_VERSION) {
-      for (const item of DEFAULT_PORTFOLIO_ITEMS) {
-        const ref = itemsCol.doc(item.cert);
-        const snap = await ref.get();
-        if (!snap.exists) continue; // preserve delete-safety for existing rows
-        const current = snap.data() || {};
-        const pricing = {};
-        if (current.cost == null && item.cost != null) pricing.cost = item.cost;
-        if (current.listPrice == null && item.listPrice != null) pricing.listPrice = item.listPrice;
-        if (current.alphaPct30d == null && item.alphaPct30d != null) pricing.alphaPct30d = item.alphaPct30d;
-        if (Object.keys(pricing).length > 0) batch.set(ref, pricing, { merge: true });
-      }
+    // Backfill pricing onto rows the account already has. seededVersion is
+    // guaranteed < EXPANSION_VERSION here (the early return above covers the rest).
+    for (const item of DEFAULT_PORTFOLIO_ITEMS) {
+      const current = existing.get(item.cert);
+      if (!current) continue; // preserve delete-safety for rows the user removed
+      const pricing = {};
+      if (current.cost == null && item.cost != null) pricing.cost = item.cost;
+      if (current.listPrice == null && item.listPrice != null) pricing.listPrice = item.listPrice;
+      if (current.alphaPct30d == null && item.alphaPct30d != null) pricing.alphaPct30d = item.alphaPct30d;
+      if (Object.keys(pricing).length > 0) batch.set(itemsCol.doc(item.cert), pricing, { merge: true });
     }
     batch.set(parentRef, {
       seededDefaultExpansionAt: now,
