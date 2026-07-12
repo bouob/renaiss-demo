@@ -60,6 +60,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [sales, setSales] = useState([]);
   const [salesSummary, setSalesSummary] = useState(null);
   const [showSales, setShowSales] = useState(false);
+  const [defaultTried, setDefaultTried] = useState(false);
 
   function rememberWallet(addr) {
     const w = normalizeWallet(addr);
@@ -95,8 +96,30 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSales([]);
       setSalesSummary(null);
       setShowSales(false);
+      setDefaultTried(false);
     }
   }, [user]);
+
+  // First sign-in with no stored wallet: discover and bind the server-seeded
+  // default portfolio so the grid is populated without manual wallet entry.
+  useEffect(() => {
+    if (!user || defaultTried || boundWallet) return;
+    let stored = '';
+    try {
+      stored = normalizeWallet(localStorage.getItem(LAST_WALLET_KEY) || '') || '';
+    } catch { /* ignore */ }
+    if (stored) return;
+    setDefaultTried(true);
+    (async () => {
+      try {
+        const token = await getToken();
+        if (!token) return;
+        const res = await fetchMeta({ authToken: token });
+        const discovered = normalizeWallet(res?.wallet || '');
+        if (discovered) await loadWalletInventory(discovered, { quiet: true });
+      } catch { /* fail open — merchant can still load manually */ }
+    })();
+  }, [user, defaultTried, boundWallet, getToken]);
 
   // Reset page when filter / inventory length changes
   useEffect(() => {
