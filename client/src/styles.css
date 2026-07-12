@@ -1051,6 +1051,58 @@ code {
   flex-wrap: wrap;
   margin-bottom: 1rem;
 }
+.inventory-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+.inventory-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+}
+.view-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.15rem;
+  padding: 0.1rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+.inventory-icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 2rem;
+  min-height: 2rem;
+  padding: 0.35rem;
+  color: var(--text-secondary);
+}
+.inventory-icon-btn.active,
+.view-toggle .inventory-icon-btn.active {
+  color: var(--neon-cyan);
+  background: rgba(0, 240, 255, 0.1);
+  border-color: rgba(0, 240, 255, 0.25);
+}
+.inventory-sort-head {
+  appearance: none;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  cursor: pointer;
+  padding: 0;
+  text-align: right;
+}
+.inventory-sort-head:hover,
+.inventory-sort-head.active {
+  color: var(--neon-cyan);
+}
 .filter-pills {
   display: flex;
   flex-wrap: wrap;
@@ -1124,6 +1176,12 @@ code {
   background: #000;
   overflow: hidden;
   position: relative;
+}
+.inventory-tile-badge {
+  position: absolute;
+  top: 0.45rem;
+  left: 0.45rem;
+  z-index: 1;
 }
 .inventory-tile-art::after {
   content: "";
@@ -1266,6 +1324,12 @@ code {
 }
 .inventory-row-pack {
   flex: 0 0 auto;
+}
+.inventory-row-demo {
+  flex: 0 0 auto;
+  opacity: 0.85;
+  border-color: rgba(0, 240, 255, 0.35);
+  color: var(--neon-cyan);
 }
 .inventory-row-num {
   text-align: right;
@@ -1746,7 +1810,28 @@ code {
 
 /* Adjacent ±1 cert suggestions (HoldingDetailModal). Thumb + copy geometry is
    shared with the .movers-list-* rules above; only the row layout differs. */
-.adjacent-section { display: flex; flex-direction: column; gap: 0.5rem; }
+.adjacent-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  padding: 0.85rem;
+}
+.adjacent-section-head {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+.adjacent-section-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+}
+.adjacent-loading {
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  letter-spacing: 0.04em;
+}
 .adjacent-list {
   overflow: hidden;
   margin: 0;

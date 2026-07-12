@@ -1,6 +1,14 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { BadgeCheck, ScanLine, Upload } from 'lucide-react';
+import {
+  ArrowDownWideNarrow,
+  ArrowUpNarrowWide,
+  BadgeCheck,
+  LayoutGrid,
+  List,
+  ScanLine,
+  Upload,
+} from 'lucide-react';
 import {
   fetchMeta,
   putMeta,
@@ -9,6 +17,7 @@ import {
   fetchCard,
   fetchSales,
   bulkSales,
+  unlinkWallet,
 } from '../lib/inventoryApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import {
@@ -17,17 +26,44 @@ import {
 } from '../lib/merchantCopilot.js';
 import { parseInventoryCsv } from '../lib/csvInventory.js';
 import { parseMoney } from '../lib/moneyInput.js';
-import { normalizeWallet, rememberLastWallet } from '../lib/lastWallet.js';
-import { centsToUsd } from '../lib/money.js';
+import {
+  clearLastWallet,
+  normalizeWallet,
+  readLastWallet,
+  rememberLastWallet,
+} from '../lib/lastWallet.js';
+import { centsToUsd, formatUsd, formatUsdSigned } from '../lib/money.js';
+import {
+  normalizeSortDir,
+  normalizeSortKey,
+  sortInventoryItems,
+} from '../lib/inventorySort.js';
+import {
+  filterLinkedInventory,
+  isDemoItem,
+} from '../lib/demoInventory.js';
+import {
+  collectSalesWallets,
+  mergeSalesResponses,
+} from '../lib/salesMerge.js';
 import { provenanceLabel } from '../lib/provenance.js';
 import HoldingDetailModal from '../components/HoldingDetailModal.jsx';
 import SoldHistoryModal from '../components/SoldHistoryModal.jsx';
 
 const PAGE_SIZE = 50;
+const VIEW_PREFS_KEY = 'merchant_inventory_view';
 
-function formatUsd(n) {
-  if (!Number.isFinite(n)) return '—';
-  return `$${n.toFixed(2)}`;
+function readViewPrefs() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(VIEW_PREFS_KEY) || '{}');
+    return {
+      viewMode: raw.viewMode === 'grid' ? 'grid' : 'list',
+      sortKey: normalizeSortKey(raw.sortKey),
+      sortDir: normalizeSortDir(raw.sortDir),
+    };
+  } catch {
+    return { viewMode: 'list', sortKey: 'fmv', sortDir: 'desc' };
+  }
 }
 
 function suggestedSell(item) {
@@ -40,6 +76,7 @@ function suggestedSell(item) {
 
 export default function Inventory({ user, getToken, firebaseOk }) {
   const { t } = useTranslation();
+  const initialPrefs = useMemo(() => readViewPrefs(), []);
   const [items, setItems] = useState([]);
   const [movers, setMovers] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -56,9 +93,21 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [selectedCert, setSelectedCert] = useState(null);
   const [page, setPage] = useState(1);
   const [filter, setFilter] = useState('all'); // all | promote | hold | clear | pack
+  const [viewMode, setViewMode] = useState(initialPrefs.viewMode);
+  const [sortKey, setSortKey] = useState(initialPrefs.sortKey);
+  const [sortDir, setSortDir] = useState(initialPrefs.sortDir);
   const [sales, setSales] = useState([]);
   const [salesSummary, setSalesSummary] = useState(null);
   const [showSales, setShowSales] = useState(false);
+  const [defaultWallet, setDefaultWallet] = useState(null);
+  const [linkedWallet, setLinkedWallet] = useState(() => readLastWallet());
+  const [unlinkBusy, setUnlinkBusy] = useState(false);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(VIEW_PREFS_KEY, JSON.stringify({ viewMode, sortKey, sortDir }));
+    } catch { /* ignore quota / private mode */ }
+  }, [viewMode, sortKey, sortDir]);
 
   const loadMovers = useCallback(async () => {
     try {
@@ -74,18 +123,37 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   }, [loadMovers]);
 
   const loadInventory = useCallback(async () => {
-    if (!user) { setItems([]); setSales([]); setSalesSummary(null); return; }
+    if (!user) {
+      setItems([]);
+      setSales([]);
+      setSalesSummary(null);
+      setDefaultWallet(null);
+      return;
+    }
     setLoading(true); setError(null);
     try {
       const token = await getToken();
       if (!token) { setItems([]); return; }
-      const [metaRes, salesRes] = await Promise.all([
-        fetchMeta({ authToken: token }),
-        fetchSales({ authToken: token }).catch(() => ({ sales: [], summary: null })),
-      ]);
-      setItems(Array.isArray(metaRes?.items) ? metaRes.items : []);
-      setSales(Array.isArray(salesRes?.sales) ? salesRes.sales : []);
-      setSalesSummary(salesRes?.summary ?? null);
+      const metaRes = await fetchMeta({ authToken: token });
+      const nextItems = Array.isArray(metaRes?.items) ? metaRes.items : [];
+      const demoW = typeof metaRes?.defaultWallet === 'string' ? metaRes.defaultWallet : null;
+      setItems(nextItems);
+      setDefaultWallet(demoW);
+
+      const last = readLastWallet();
+      setLinkedWallet(last);
+      const wallets = collectSalesWallets(nextItems, demoW, last);
+      if (wallets.length === 0) {
+        setSales([]);
+        setSalesSummary(null);
+      } else {
+        const salesRes = await Promise.all(
+          wallets.map((w) => fetchSales({ authToken: token, wallet: w }).catch(() => ({ sales: [] }))),
+        );
+        const merged = mergeSalesResponses(salesRes);
+        setSales(merged.sales);
+        setSalesSummary(merged.summary);
+      }
     } catch (err) {
       setError(err?.message ?? t('inventory.loadFailed'));
       setItems([]); setSales([]); setSalesSummary(null);
@@ -105,14 +173,15 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setSales([]);
       setSalesSummary(null);
       setShowSales(false);
+      setDefaultWallet(null);
+      setLinkedWallet('');
     }
   }, [user]);
 
-
-  // Reset page when filter / inventory length changes
+  // Reset page when filter / sort / inventory length / link changes
   useEffect(() => {
     setPage(1);
-  }, [filter, items.length]);
+  }, [filter, sortKey, sortDir, items.length, linkedWallet]);
 
   /** Persist one holding under the signed-in uid + wallet. */
   async function persistItem(item, token, walletAddr) {
@@ -141,22 +210,29 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
+  // When a wallet is linked: personal covers demo on same cert; demos still
+  // show for certs the personal wallet does not hold.
+  const visibleItems = useMemo(
+    () => filterLinkedInventory(items, linkedWallet, defaultWallet),
+    [items, linkedWallet, defaultWallet],
+  );
+
   const onBoard = useMemo(() => {
     const keys = new Set();
     for (const m of movers) {
       if (m.name) keys.add(String(m.name).toLowerCase());
       if (m.slug) keys.add(m.slug);
     }
-    return items.filter((it) => {
+    return visibleItems.filter((it) => {
       const nameHit = it.name && keys.has(String(it.name).toLowerCase());
       const hrefSlug = typeof it.href === 'string' && it.href.startsWith('/card/')
         ? it.href.slice('/card/'.length)
         : null;
       return nameHit || (hrefSlug && keys.has(hrefSlug));
     });
-  }, [items, movers]);
+  }, [visibleItems, movers]);
 
-  const enriched = useMemo(() => items.map((it) => {
+  const enriched = useMemo(() => visibleItems.map((it) => {
     const mover = movers.find((m) =>
       (it.name && m.name && String(it.name).toLowerCase() === String(m.name).toLowerCase())
       || (it.href && m.href && it.href === m.href),
@@ -181,6 +257,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       : null;
     return {
       ...it,
+      isDemo: isDemoItem(it, defaultWallet),
       alphaPct30d,
       decision: detail.decision || 'hold',
       damped: detail.damped,
@@ -193,7 +270,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       series30d: it.series30d ?? [],
       mover,
     };
-  }), [items, movers]);
+  }), [visibleItems, movers, defaultWallet]);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return enriched;
@@ -204,12 +281,27 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     return enriched.filter((it) => (it.decision || 'hold') === filter);
   }, [enriched, filter]);
 
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const sorted = useMemo(
+    () => sortInventoryItems(filtered, sortKey, sortDir),
+    [filtered, sortKey, sortDir],
+  );
+
+  const totalPages = Math.max(1, Math.ceil(sorted.length / PAGE_SIZE));
   const safePage = Math.min(page, totalPages);
   const pageItems = useMemo(() => {
     const start = (safePage - 1) * PAGE_SIZE;
-    return filtered.slice(start, start + PAGE_SIZE);
-  }, [filtered, safePage]);
+    return sorted.slice(start, start + PAGE_SIZE);
+  }, [sorted, safePage]);
+
+  function setSortColumn(nextKey) {
+    const key = normalizeSortKey(nextKey);
+    if (key === sortKey) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'));
+      return;
+    }
+    setSortKey(key);
+    setSortDir('desc');
+  }
 
   const portfolioStats = useMemo(() => {
     let fmv = 0;
@@ -225,6 +317,32 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const pnl = withCost > 0 && fmv > 0 ? fmv - cost : null;
     return { fmv, cost, pnl, withCost, n: enriched.length };
   }, [enriched]);
+
+  async function handleUnlinkWallet() {
+    const w = normalizeWallet(linkedWallet);
+    if (!w || !user) return;
+    const removeCount = items.filter((it) => normalizeWallet(it.wallet) === w).length;
+    const short = `${w.slice(0, 6)}…${w.slice(-4)}`;
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(t('inventory.unlinkConfirm', { count: removeCount, wallet: short }))
+      : true;
+    if (!ok) return;
+    setUnlinkBusy(true);
+    setError(null);
+    try {
+      await withAuth(async (token) => {
+        await unlinkWallet(w, { authToken: token });
+      });
+      clearLastWallet();
+      setLinkedWallet('');
+      setCsvNote(t('inventory.unlinkOk'));
+      await loadInventory();
+    } catch (err) {
+      setError(err?.message ?? t('inventory.unlinkFailed'));
+    } finally {
+      setUnlinkBusy(false);
+    }
+  }
 
   const realizedPnl = Number.isFinite(salesSummary?.totalRealizedPnlUsd)
     ? salesSummary.totalRealizedPnlUsd
@@ -305,8 +423,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         .filter((r) => r.cert));
       const sales = Array.isArray(res?.sales) ? res.sales.map((s) => ({ ...s, wallet: addr })) : [];
       setStagedSales((prev) => [...prev, ...sales]);
-      // BenchmarkPanel scopes its inventory-vs-index series to this wallet.
-      rememberLastWallet(addr);
+      // Do not mark the wallet as linked until confirm — collision filter /
+      // "linked" chrome should only apply after holdings are persisted.
     } catch (err) {
       setStageError(err?.message ?? t('inventory.scanFailed'));
     } finally {
@@ -384,11 +502,21 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setStageBusy(true);
     setStageError(null);
     try {
+      // Prefer a scanned wallet for link state (Benchmark + collision filter).
+      const scanW = normalizeWallet(
+        staged.find((r) => r.addedVia === 'scan' && r.wallet)?.wallet
+        || stagedSales[0]?.wallet
+        || '',
+      );
       if (user) {
         await withAuth(async (token) => {
           await persistBulk(staged, token, null);
           await persistStagedSales(token);
         });
+        if (scanW) {
+          rememberLastWallet(scanW);
+          setLinkedWallet(scanW);
+        }
         await loadInventory();
       } else {
         setItems((prev) => {
@@ -396,6 +524,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           for (const r of staged) byCert.set(String(r.cert), { ...byCert.get(String(r.cert)), ...r });
           return [...byCert.values()];
         });
+        if (scanW) {
+          rememberLastWallet(scanW);
+          setLinkedWallet(scanW);
+        }
       }
       const guestNote = user ? '' : ` ${t('inventory.guestConfirmNote')}`;
       setCsvNote(t('inventory.confirmSaved', { count: staged.length }) + guestNote);
@@ -508,7 +640,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             <div className="hero-stat">
               <span className="label">{t('inventory.statsUnrealized')}</span>
               <strong className={Number.isFinite(portfolioStats.pnl) ? (portfolioStats.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
-                {formatUsd(portfolioStats.pnl)}
+                {formatUsdSigned(portfolioStats.pnl)}
               </strong>
             </div>
             <button
@@ -520,7 +652,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             >
               <span className="label">{t('inventory.statsRevenue')}</span>
               <strong className={Number.isFinite(realizedPnl) ? (realizedPnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
-                {formatUsd(realizedPnl)}
+                {formatUsdSigned(realizedPnl)}
               </strong>
               <span className="small" style={{ marginTop: '0.15rem' }}>
                 {t('inventory.openSalesHistoryShort')}
@@ -541,7 +673,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           {addMethod === 'csv' && <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsv(e.target.files?.[0])} />}
           <p className="small">{t(`inventory.${addMethod}AddHint`)}</p>{stageError && <p className="small" style={{ color: 'var(--clear)' }}>{stageError}</p>}
           <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
-          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(Number.isFinite(r.priceUsdCents) ? r.priceUsdCents / 100 : null)}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
+          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(centsToUsd(r.priceUsdCents))}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
           <div className="modal-actions" style={{ marginTop: '.8rem' }}><button type="button" className="btn btn-ghost btn-sm" onClick={closeAddPanel}>{t('inventory.discard')}</button><button type="button" className="btn btn-primary" disabled={stageBusy || staged.length === 0} onClick={confirmStaged}>{t('inventory.confirmAdd', { count: staged.length })}</button></div>
         </section>
       )}
@@ -564,86 +696,213 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         </section>
       )}
 
-      {/* ── Inventory grid (Dokipoki-style holdings zone) ── */}
+      {/* ── Inventory holdings zone (list / grid + sort) ── */}
       {!addMethod && <section className="inventory-zone">
         <div className="inventory-zone-head">
           <div>
             <h2 className="section-title">{t('inventory.yourInventory')}</h2>
             <p className="small">
-              {loading ? t('common.loading') : t('inventory.ofCards', { filtered: filtered.length, total: enriched.length })}
+              {loading ? t('common.loading') : t('inventory.ofCards', { filtered: sorted.length, total: enriched.length })}
               {filter !== 'all' ? ` · ${t('inventory.filter')}: ${filter}` : ''}
+              {linkedWallet ? ` · ${t('inventory.linkedWallet', { wallet: `${linkedWallet.slice(0, 6)}…${linkedWallet.slice(-4)}` })}` : ''}
             </p>
           </div>
-          <div className="filter-pills" role="tablist" aria-label="Filter holdings">
-            {FILTERS.map((f) => (
+          <div className="inventory-toolbar">
+            <div className="filter-pills" role="tablist" aria-label="Filter holdings">
+              {FILTERS.map((f) => (
+                <button
+                  key={f.id}
+                  type="button"
+                  role="tab"
+                  aria-selected={filter === f.id}
+                  className={`filter-pill ${filter === f.id ? 'active' : ''}`}
+                  onClick={() => setFilter(f.id)}
+                >
+                  {f.label}
+                </button>
+              ))}
+            </div>
+            <div className="inventory-controls" role="group" aria-label={t('inventory.sortAria')}>
               <button
-                key={f.id}
                 type="button"
-                role="tab"
-                aria-selected={filter === f.id}
-                className={`filter-pill ${filter === f.id ? 'active' : ''}`}
-                onClick={() => setFilter(f.id)}
+                className={`filter-pill ${sortKey === 'fmv' ? 'active' : ''}`}
+                aria-pressed={sortKey === 'fmv'}
+                onClick={() => setSortColumn('fmv')}
               >
-                {f.label}
+                {t('inventory.sortFmv')}
               </button>
-            ))}
-            <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>{t('inventory.addInventory')}</button>
+              <button
+                type="button"
+                className={`filter-pill ${sortKey === 'unrealized' ? 'active' : ''}`}
+                aria-pressed={sortKey === 'unrealized'}
+                onClick={() => setSortColumn('unrealized')}
+              >
+                {t('inventory.sortUnrealized')}
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm inventory-icon-btn"
+                onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+                title={sortDir === 'desc' ? t('inventory.sortDesc') : t('inventory.sortAsc')}
+                aria-label={sortDir === 'desc' ? t('inventory.sortDesc') : t('inventory.sortAsc')}
+              >
+                {sortDir === 'desc'
+                  ? <ArrowDownWideNarrow size={16} strokeWidth={1.75} />
+                  : <ArrowUpNarrowWide size={16} strokeWidth={1.75} />}
+              </button>
+              <div className="view-toggle" role="group" aria-label={t('inventory.viewAria')}>
+                <button
+                  type="button"
+                  className={`btn btn-ghost btn-sm inventory-icon-btn ${viewMode === 'list' ? 'active' : ''}`}
+                  aria-pressed={viewMode === 'list'}
+                  title={t('inventory.viewList')}
+                  aria-label={t('inventory.viewList')}
+                  onClick={() => setViewMode('list')}
+                >
+                  <List size={16} strokeWidth={1.75} />
+                </button>
+                <button
+                  type="button"
+                  className={`btn btn-ghost btn-sm inventory-icon-btn ${viewMode === 'grid' ? 'active' : ''}`}
+                  aria-pressed={viewMode === 'grid'}
+                  title={t('inventory.viewGrid')}
+                  aria-label={t('inventory.viewGrid')}
+                  onClick={() => setViewMode('grid')}
+                >
+                  <LayoutGrid size={16} strokeWidth={1.75} />
+                </button>
+              </div>
+              {linkedWallet ? (
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm"
+                  disabled={unlinkBusy}
+                  onClick={handleUnlinkWallet}
+                  title={t('inventory.unlinkWalletHint')}
+                >
+                  {unlinkBusy ? t('inventory.unlinking') : t('inventory.unlinkWallet')}
+                </button>
+              ) : null}
+              <button type="button" className="btn btn-primary" onClick={() => setShowAddModal(true)}>
+                {t('inventory.addInventory')}
+              </button>
+            </div>
           </div>
         </div>
 
         {enriched.length === 0 ? (
           <div className="empty">{t('inventory.emptyInventory')}</div>
-        ) : filtered.length === 0 ? (
+        ) : sorted.length === 0 ? (
           <div className="empty">{t('inventory.filterEmpty')}</div>
         ) : (
           <>
-            <div className="inventory-list" role="list">
-              <div className="inventory-list-head" aria-hidden="true">
-                <span className="inventory-list-col-card">{t('inventory.yourInventory')}</span>
-                <span className="inventory-list-col-num">{t('inventory.statsFmv')}</span>
-                <span className="inventory-list-col-num">{t('inventory.statsUnrealized')}</span>
-                <span className="inventory-list-col-badge" />
-              </div>
-              {pageItems.map((it) => {
-                const cert = it.cert || it.id;
-                const decision = it.decision || 'hold';
-                const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
-                const imageUrl = it.indexImageUrl || it.imageUrl;
-                return (
-                  <button
-                    key={cert}
-                    type="button"
-                    role="listitem"
-                    className="inventory-row"
-                    onClick={() => setSelectedCert(cert)}
-                  >
-                    <div className="inventory-row-card">
-                      <div className="inventory-row-art">
+            {viewMode === 'grid' ? (
+              <div className="inventory-grid" role="list">
+                {pageItems.map((it) => {
+                  const cert = it.cert || it.id;
+                  const decision = it.decision || 'hold';
+                  const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
+                  const imageUrl = it.indexImageUrl || it.imageUrl;
+                  return (
+                    <button
+                      key={cert}
+                      type="button"
+                      role="listitem"
+                      className="inventory-tile"
+                      onClick={() => setSelectedCert(cert)}
+                    >
+                      <div className="inventory-tile-art">
                         {imageUrl ? (
                           <img src={imageUrl} alt="" loading="lazy" />
                         ) : (
-                          <div className="thumb-fallback inventory-row-fallback">{t('common.card')}</div>
+                          <div className="thumb-fallback inventory-tile-fallback">{t('common.card')}</div>
                         )}
-                      </div>
-                      <div className="inventory-row-meta">
-                        <strong className="inventory-row-name">{it.name || cert}</strong>
-                        <span className="small inventory-row-sub">
-                          {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
-                          {isPack ? <span className="chip inventory-row-pack">{t('inventory.pack')}</span> : null}
+                        <span className={`badge inventory-tile-badge ${decision}`}>
+                          {t(`decision.${decision}`)}
                         </span>
                       </div>
-                    </div>
-                    <span className="inventory-row-num">{formatUsd(it.fmvUsd)}</span>
-                    <span className={`inventory-row-num ${Number.isFinite(it.pnl) ? (it.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}`}>
-                      {Number.isFinite(it.pnl) ? `${it.pnl >= 0 ? '+' : ''}${formatUsd(it.pnl)}` : '—'}
-                    </span>
-                    <span className={`badge inventory-row-badge ${decision}`}>
-                      {t(`decision.${decision}`)}
-                    </span>
+                      <div className="inventory-tile-body">
+                        <strong className="inventory-tile-name">{it.name || cert}</strong>
+                        <div className="small">
+                          {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
+                          {isPack ? ` · ${t('inventory.pack')}` : ''}
+                          {it.isDemo ? ` · ${t('inventory.sourceDemo')}` : ''}
+                        </div>
+                        <div className="inventory-tile-prices">
+                          <span>{formatUsd(it.fmvUsd)}</span>
+                          <span className={Number.isFinite(it.pnl) ? (it.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
+                            {formatUsdSigned(it.pnl)}
+                          </span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="inventory-list" role="list">
+                <div className="inventory-list-head">
+                  <span className="inventory-list-col-card">{t('inventory.yourInventory')}</span>
+                  <button
+                    type="button"
+                    className={`inventory-list-col-num inventory-sort-head ${sortKey === 'fmv' ? 'active' : ''}`}
+                    onClick={() => setSortColumn('fmv')}
+                  >
+                    {t('inventory.statsFmv')}
+                    {sortKey === 'fmv' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
                   </button>
-                );
-              })}
-            </div>
+                  <button
+                    type="button"
+                    className={`inventory-list-col-num inventory-sort-head ${sortKey === 'unrealized' ? 'active' : ''}`}
+                    onClick={() => setSortColumn('unrealized')}
+                  >
+                    {t('inventory.statsUnrealized')}
+                    {sortKey === 'unrealized' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+                  </button>
+                  <span className="inventory-list-col-badge" />
+                </div>
+                {pageItems.map((it) => {
+                  const cert = it.cert || it.id;
+                  const decision = it.decision || 'hold';
+                  const isPack = it.acquireType === 'PACK_PULL' || it.acquireType === 'MINT';
+                  const imageUrl = it.indexImageUrl || it.imageUrl;
+                  return (
+                    <button
+                      key={cert}
+                      type="button"
+                      role="listitem"
+                      className="inventory-row"
+                      onClick={() => setSelectedCert(cert)}
+                    >
+                      <div className="inventory-row-card">
+                        <div className="inventory-row-art">
+                          {imageUrl ? (
+                            <img src={imageUrl} alt="" loading="lazy" />
+                          ) : (
+                            <div className="thumb-fallback inventory-row-fallback">{t('common.card')}</div>
+                          )}
+                        </div>
+                        <div className="inventory-row-meta">
+                          <strong className="inventory-row-name">{it.name || cert}</strong>
+                          <span className="small inventory-row-sub">
+                            {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
+                            {isPack ? <span className="chip inventory-row-pack">{t('inventory.pack')}</span> : null}
+                            {it.isDemo ? <span className="chip inventory-row-demo">{t('inventory.sourceDemo')}</span> : null}
+                          </span>
+                        </div>
+                      </div>
+                      <span className="inventory-row-num">{formatUsd(it.fmvUsd)}</span>
+                      <span className={`inventory-row-num ${Number.isFinite(it.pnl) ? (it.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}`}>
+                        {formatUsdSigned(it.pnl)}
+                      </span>
+                      <span className={`badge inventory-row-badge ${decision}`}>
+                        {t(`decision.${decision}`)}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
 
             {totalPages > 1 && (
               <div className="pagination">
@@ -678,6 +937,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           user={user}
           getToken={getToken}
           wallet={selected.wallet || null}
+          defaultWallet={defaultWallet}
           onClose={() => setSelectedCert(null)}
           onSaveCost={saveCost}
           onSaveDetails={saveDetailsGuarded}
