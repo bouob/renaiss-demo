@@ -4,6 +4,7 @@ import Sparkline from './Sparkline.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
+import { provenanceLabel } from '../pages/Inventory.jsx';
 
 function formatUsd(n) {
   if (!Number.isFinite(n)) return '—';
@@ -209,6 +210,7 @@ export default function HoldingDetailModal({
                 <span className="chip">{t(`costSource.${item.costSource}`, { defaultValue: item.costSource })}</span>
               )}
             </div>
+            {provenanceLabel(item, t) && <p className="small muted">{provenanceLabel(item, t)}</p>}
 
             <div className="stat-grid">
               <div className="stat-cell">
