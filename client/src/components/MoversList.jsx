@@ -1,17 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
+import { formatUsdCents } from '../lib/money.js';
 
 function formatPct(decimal) {
   if (!Number.isFinite(decimal)) return '—';
   const pct = decimal * 100;
   const sign = pct > 0 ? '+' : '';
   return `${sign}${pct.toFixed(1)}%`;
-}
-
-function formatUsdCents(cents) {
-  if (!Number.isFinite(cents)) return '—';
-  return `$${(cents / 100).toFixed(2)}`;
 }
 
 export default function MoversList({ movers = [], emptyLabel }) {
