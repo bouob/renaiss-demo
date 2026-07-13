@@ -33,25 +33,27 @@ function writeCookieLocale(locale) {
   }
 }
 
-/** @returns {'en'|'zh-TW'|'ja'|null} */
+const SUPPORTED_LOCALES = new Set(['en', 'zh-TW', 'ja', 'ko']);
+
+/** @returns {'en'|'zh-TW'|'ja'|'ko'|null} */
 export function loadLocalePreference() {
   if (typeof document === 'undefined') return null;
   const fromCookie = readCookieObject()?.locale;
-  if (fromCookie === 'en' || fromCookie === 'zh-TW' || fromCookie === 'ja') {
+  if (SUPPORTED_LOCALES.has(fromCookie)) {
     return fromCookie;
   }
   try {
     const local = localStorage.getItem(LOCAL_KEY);
-    if (local === 'en' || local === 'zh-TW' || local === 'ja') return local;
+    if (SUPPORTED_LOCALES.has(local)) return local;
   } catch {
     /* ignore */
   }
   return null;
 }
 
-/** @param {'en'|'zh-TW'|'ja'} locale */
+/** @param {'en'|'zh-TW'|'ja'|'ko'} locale */
 export function setLocalePreference(locale) {
-  if (locale !== 'en' && locale !== 'zh-TW' && locale !== 'ja') return;
+  if (!SUPPORTED_LOCALES.has(locale)) return;
   try {
     localStorage.setItem(LOCAL_KEY, locale);
   } catch {

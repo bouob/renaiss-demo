@@ -17,8 +17,10 @@ import scanRouter from './routes/scan.js';
 import metaRouter from './routes/meta.js';
 import tickerRouter from './routes/ticker.js';
 import insightRouter from './routes/insight.js';
+import marketInsightRouter from './routes/marketInsight.js';
 import salesRouter from './routes/sales.js';
 import portfolioSeriesRouter from './routes/portfolioSeries.js';
+import dokipokiStoriesRouter from './routes/dokipokiStories.js';
 
 const app = express();
 app.disable('x-powered-by');
@@ -55,8 +57,10 @@ router.use(relatedRouter);
 router.use(scanRouter);
 router.use(metaRouter);
 router.use(insightRouter);
+router.use(marketInsightRouter);
 router.use(salesRouter);
 router.use(portfolioSeriesRouter);
+router.use(dokipokiStoriesRouter);
 
 app.use('/merchant/api', router);
 app.use('/api', router);

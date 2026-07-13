@@ -40,7 +40,7 @@ export default function TopBoardGallery({ cards = [] }) {
 
   if (!cards.length) return <div className="empty">{t('dashboard.top10Empty')}</div>;
 
-  const goNext = () => setPage((current) => (current >= totalPages ? 1 : current + 1));
+  const goToPage = (nextPage) => setPage(nextPage);
 
   return (
     <div
@@ -97,7 +97,23 @@ export default function TopBoardGallery({ cards = [] }) {
 
       {totalPages > 1 && (
         <div className="top-board-controls">
-          <button type="button" className="btn btn-ghost btn-sm" onClick={goNext} aria-label={t('common.next')}>→</button>
+          <div className="top-board-dots" aria-label={t('index.top10')}>
+            {Array.from({ length: totalPages }, (_, index) => {
+              const dotPage = index + 1;
+              const isActive = dotPage === safePage;
+              return (
+                <button
+                  key={dotPage}
+                  type="button"
+                  className={`top-board-dot${isActive ? ' active' : ''}`}
+                  onClick={() => goToPage(dotPage)}
+                  onMouseEnter={() => setPaused(true)}
+                  aria-label={`${t('common.card')} ${dotPage}`}
+                  aria-current={isActive ? 'page' : undefined}
+                />
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

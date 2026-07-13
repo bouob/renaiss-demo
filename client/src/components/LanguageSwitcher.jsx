@@ -5,6 +5,7 @@ const LANGS = [
   { code: 'en', labelKey: 'lang.en' },
   { code: 'zh-TW', labelKey: 'lang.zhTW' },
   { code: 'ja', labelKey: 'lang.ja' },
+  { code: 'ko', labelKey: 'lang.ko' },
 ];
 
 /** Compact pill switcher (Dokipoki LanguageSwitcher simplified). */

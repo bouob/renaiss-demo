@@ -58,9 +58,9 @@ export default function MoversList({ movers = [], emptyLabel }) {
 
       <div className="movers-list" role="table" aria-label={t(`decision.${activeDecision}`, { defaultValue: activeDecision })}>
         <div className="movers-list-header" role="row">
-        <span role="columnheader">{t('dashboard.headerCard', { defaultValue: 'Card' })}</span>
-        <span role="columnheader" className="movers-list-align">{t('dashboard.marketPrice', { defaultValue: 'Market price' })}</span>
-        <span role="columnheader" className="movers-list-align">30d</span>
+        <span role="columnheader">{t('common.card')}</span>
+        <span role="columnheader" className="movers-list-align">{t('common.marketPrice')}</span>
+        <span role="columnheader" className="movers-list-align">{t('common.thirtyDay')}</span>
         <span role="columnheader" className="movers-list-align">{t('dashboard.strengthLabel')}</span>
         </div>
 

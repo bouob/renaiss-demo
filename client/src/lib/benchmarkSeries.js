@@ -15,14 +15,20 @@ function toValueMap(series) {
 
 /**
  * Rebase both series to 100 at the earliest date they share (finite on both).
+ * When `windowDays` is set, only the latest `windowDays + 1` shared points are
+ * considered so the visible chart matches the selected benchmark window.
  * Returns null when there is no shared date.
  */
-export function rebaseToShared(portfolio, indexSparkline) {
+export function rebaseToShared(portfolio, indexSparkline, { windowDays = null } = {}) {
   const pMap = toValueMap(portfolio);
   const iMap = toValueMap(indexSparkline);
 
-  const sharedDates = [...pMap.keys()].filter((t) => iMap.has(t)).sort();
+  let sharedDates = [...pMap.keys()].filter((t) => iMap.has(t)).sort();
   if (sharedDates.length === 0) return null;
+  if (Number.isFinite(windowDays) && windowDays > 0) {
+    sharedDates = sharedDates.slice(-(Math.trunc(windowDays) + 1));
+    if (sharedDates.length === 0) return null;
+  }
 
   const baseDate = sharedDates[0];
   const pBase = pMap.get(baseDate);

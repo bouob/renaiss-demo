@@ -41,6 +41,7 @@ export async function userOwnsCert(uid, cert, wallet = null) {
 
 router.get('/meta', requireAuth, async (req, res) => {
   try {
+    res.set('Cache-Control', 'private, max-age=30, stale-while-revalidate=120');
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable', items: [] });
     }

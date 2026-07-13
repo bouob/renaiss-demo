@@ -6,12 +6,12 @@
  * unpriced rows never bury the cards a merchant is actually comparing.
  */
 
-const SORT_KEYS = new Set(['fmv', 'unrealized']);
+const SORT_KEYS = new Set(['cost', 'fmv', 'unrealized']);
 const SORT_DIRS = new Set(['asc', 'desc']);
 
 /**
- * @param {'fmv'|'unrealized'|string|null|undefined} key
- * @returns {'fmv'|'unrealized'}
+ * @param {'cost'|'fmv'|'unrealized'|string|null|undefined} key
+ * @returns {'cost'|'fmv'|'unrealized'}
  */
 export function normalizeSortKey(key) {
   return SORT_KEYS.has(key) ? key : 'fmv';
@@ -27,11 +27,13 @@ export function normalizeSortDir(dir) {
 
 /**
  * @param {object} item
- * @param {'fmv'|'unrealized'} sortKey
+ * @param {'cost'|'fmv'|'unrealized'} sortKey
  * @returns {number|null}
  */
 function sortValue(item, sortKey) {
-  const raw = sortKey === 'unrealized' ? item?.pnl : item?.fmvUsd;
+  const raw = sortKey === 'cost'
+    ? item?.cost
+    : (sortKey === 'unrealized' ? item?.pnl : item?.fmvUsd);
   return Number.isFinite(raw) ? raw : null;
 }
 
@@ -45,7 +47,7 @@ function tieBreak(a, b) {
 
 /**
  * @param {Array<object>} items
- * @param {'fmv'|'unrealized'|string} sortKey
+ * @param {'cost'|'fmv'|'unrealized'|string} sortKey
  * @param {'asc'|'desc'|string} sortDir
  * @returns {Array<object>} new array
  */

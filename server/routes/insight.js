@@ -88,7 +88,7 @@ router.post('/insight/merchant', requireAuth, insightLimiter, async (req, res) =
       return res.status(403).json({ error: 'not_owned', cert });
     }
 
-    const locale = ['en', 'zh-TW', 'ja'].includes(req.body?.locale) ? req.body.locale : 'en';
+    const locale = ['en', 'zh-TW', 'ja', 'ko'].includes(req.body?.locale) ? req.body.locale : 'en';
     const merchantContext = parseMerchantContext(req.body?.merchantContext) || {
       decision: 'hold',
       alphaPct30d: null,

@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next';
 import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
 
 /**
@@ -12,6 +13,7 @@ export default function CardRowLink({
   thumb,
   className = '',
 }) {
+  const { t } = useTranslation();
   const indexUrl = resolveIndexUrl(href);
   const content = (
     <>
@@ -19,12 +21,12 @@ export default function CardRowLink({
         thumb ? (
           <img src={thumb} alt="" loading="lazy" className="row-thumb" />
         ) : (
-          <div className="thumb-fallback row-thumb">card</div>
+          <div className="thumb-fallback row-thumb">{t('common.card')}</div>
         )
       )}
       <div className="list-item-body">
         <div className="list-item-title-row">
-          <strong className="list-item-name">{name ?? '—'}</strong>
+          <strong className="list-item-name">{name ?? t('common.emDash')}</strong>
           {indexUrl && <span className="ext-hint" aria-hidden="true">↗</span>}
         </div>
         {meta && <div className="small">{meta}</div>}
@@ -48,7 +50,7 @@ export default function CardRowLink({
   }
 
   return (
-    <div className={`list-item list-item-static ${className}`.trim()} title="No Renaiss Index link">
+    <div className={`list-item list-item-static ${className}`.trim()} title={t('common.noIndexLink')}>
       {content}
     </div>
   );

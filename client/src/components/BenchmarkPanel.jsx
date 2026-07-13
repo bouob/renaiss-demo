@@ -6,10 +6,12 @@ import { fetchPortfolioSeries } from '../lib/portfolioSeriesApi.js';
 import { readLastWallet } from '../lib/lastWallet.js';
 
 const MIN_COVERED = 2;
+const WINDOW_KEYS = ['d7', 'd30', 'd365'];
 
 export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState('index');
+  const [windowKey, setWindowKey] = useState('d30');
   const [series, setSeries] = useState(null); // resolved payload
   const [status, setStatus] = useState('idle'); // idle | loading | ready | nowallet
 
@@ -17,6 +19,7 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
   useEffect(() => {
     setSeries(null);
     setStatus('idle');
+    setWindowKey('d30');
     if (!user) setTab('index');
   }, [user]);
 
@@ -42,29 +45,43 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
     if (user && tab === 'vs' && status === 'idle') loadSeries();
   }, [user, tab, status, loadSeries]);
 
-  // Guests: no tab bar, Index view only (zero visual change, no auth fetch path).
-  if (!user) {
-    return <IndexTile index={index} dateLocale={dateLocale} />;
-  }
-
   return (
     <div className="benchmark-panel">
-      <div className="benchmark-tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === 'index'}
-                className={`benchmark-tab ${tab === 'index' ? 'active' : ''}`}
-                onClick={() => setTab('index')}>
-          {t('benchmark.tabIndex')}
-        </button>
-        <button type="button" role="tab" aria-selected={tab === 'vs'}
-                className={`benchmark-tab ${tab === 'vs' ? 'active' : ''}`}
-                onClick={() => setTab('vs')}>
-          {t('benchmark.tabVs')}
-        </button>
+      <div className="benchmark-panel-head">
+        {user ? (
+          <div className="benchmark-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={tab === 'index'}
+                    className={`benchmark-tab ${tab === 'index' ? 'active' : ''}`}
+                    onClick={() => setTab('index')}>
+              {t('benchmark.tabIndex')}
+            </button>
+            <button type="button" role="tab" aria-selected={tab === 'vs'}
+                    className={`benchmark-tab ${tab === 'vs' ? 'active' : ''}`}
+                    onClick={() => setTab('vs')}>
+              {t('benchmark.tabVs')}
+            </button>
+          </div>
+        ) : <div />}
+
+        <div className="benchmark-window-tabs" role="tablist" aria-label={t('benchmark.windowLabel')}>
+          {WINDOW_KEYS.map((key) => (
+            <button
+              key={key}
+              type="button"
+              role="tab"
+              aria-selected={windowKey === key}
+              className={`benchmark-tab ${windowKey === key ? 'active' : ''}`}
+              onClick={() => setWindowKey(key)}
+            >
+              {t(`index.${key}`)}
+            </button>
+          ))}
+        </div>
       </div>
 
-      {tab === 'index' && <IndexTile index={index} dateLocale={dateLocale} />}
+      {(!user || tab === 'index') && <IndexTile index={index} dateLocale={dateLocale} windowKey={windowKey} />}
 
-      {tab === 'vs' && (
+      {user && tab === 'vs' && (
         <div className="benchmark-vs-pane">
           {status === 'loading' && <div className="empty">{t('benchmark.loading')}</div>}
           {status === 'nowallet' && <div className="empty">{t('benchmark.vsNoWallet')}</div>}
@@ -87,7 +104,10 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
               <BenchmarkVsChart
                 portfolio={series.portfolio}
                 index={series.index}
+                benchmark={series.benchmark}
                 coverage={series.coverage}
+                windowKey={windowKey}
+                dateLocale={dateLocale}
               />
             );
           })()}

@@ -16,6 +16,8 @@ import MoversList from '../components/MoversList.jsx';
 import InfoHint from '../components/InfoHint.jsx';
 import BenchmarkPanel from '../components/BenchmarkPanel.jsx';
 import TopBoardGallery from '../components/TopBoardGallery.jsx';
+import DokipokiStoriesSection from '../components/DokipokiStoriesSection.jsx';
+import { fetchDokipokiStories } from '../lib/dokipokiStoriesApi.js';
 
 function moverForInventoryItem(item, movers) {
   return movers.find((mover) => (
@@ -31,6 +33,8 @@ export default function Dashboard({ user, getToken }) {
   const [inventoryItems, setInventoryItems] = useState([]);
   const [defaultWallet, setDefaultWallet] = useState(null);
   const [trades, setTrades] = useState([]);
+  const [dokipokiStories, setDokipokiStories] = useState([]);
+  const [storiesLoading, setStoriesLoading] = useState(true);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
@@ -57,6 +61,22 @@ export default function Dashboard({ user, getToken }) {
     })();
     return () => { cancelled = true; };
   }, [t]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setStoriesLoading(true);
+    fetchDokipokiStories({ locale: i18n.language })
+      .then((result) => {
+        if (!cancelled) setDokipokiStories(Array.isArray(result?.stories) ? result.stories : []);
+      })
+      .catch(() => {
+        if (!cancelled) setDokipokiStories([]);
+      })
+      .finally(() => {
+        if (!cancelled) setStoriesLoading(false);
+      });
+    return () => { cancelled = true; };
+  }, [i18n.language]);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,7 +144,13 @@ export default function Dashboard({ user, getToken }) {
       };
     });
   }, [inventoryItems, movers, defaultWallet]);
-  const dateLocale = i18n.language === 'ja' ? 'ja-JP' : i18n.language === 'zh-TW' ? 'zh-TW' : 'en-US';
+  const dateLocale = i18n.language === 'ja'
+    ? 'ja-JP'
+    : i18n.language === 'zh-TW'
+      ? 'zh-TW'
+      : i18n.language === 'ko'
+        ? 'ko-KR'
+        : 'en-US';
 
   return (
     <main className="stack">
@@ -193,10 +219,11 @@ export default function Dashboard({ user, getToken }) {
               <section className="glass-card dashboard-top-card">
                 <div className="index-tile-head">
                   <p className="label" style={{ margin: 0 }}>{t('index.top10')}</p>
-                  <span className="small">{t('index.tapToIndex')}</span>
                 </div>
                 <TopBoardGallery cards={top10.slice(0, 10)} />
               </section>
+
+              <DokipokiStoriesSection stories={dokipokiStories} loading={storiesLoading} />
             </div>
 
             <section className="glass-card dashboard-movers-section">

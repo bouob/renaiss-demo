@@ -36,6 +36,7 @@ export const ATTRIBUTION_URL = 'https://index.renaissos.com';
 export const SERIES_CONCURRENCY = 4;
 export const MAX_SERIES_SLUGS_PER_REQUEST = 60;
 export const MIN_COVERAGE_FRACTION = 0.8;
+export const BENCHMARK_WINDOWS = [7, 30, 365];
 // Series cache freshness window — same order of magnitude as the source's
 // PORTFOLIO_STALE_MS (there derived from SUMMARY_STALE_MS = 24h).
 export const SERIES_STALE_MS = 24 * 60 * 60 * 1000;
@@ -92,6 +93,34 @@ function firstAndLastAligned(aligned) {
   return { first, last };
 }
 
+function windowKey(days) {
+  return `d${days}`;
+}
+
+function computeTrailingDelta(aligned, days) {
+  if (!Array.isArray(aligned) || aligned.length <= days) return null;
+  const end = aligned[aligned.length - 1]?.usdCents;
+  const start = aligned[aligned.length - 1 - days]?.usdCents;
+  if (!Number.isFinite(start) || start <= 0 || !Number.isFinite(end)) return null;
+  return end / start - 1;
+}
+
+function computeWindowMetrics(aligned, summaryDeltas = {}) {
+  const windows = {};
+  for (const days of BENCHMARK_WINDOWS) {
+    const key = windowKey(days);
+    const deltaPct = computeTrailingDelta(aligned, days);
+    const indexDeltaPct = Number.isFinite(summaryDeltas?.[key]) ? summaryDeltas[key] : null;
+    windows[key] = {
+      deltaPct,
+      alphaPct: Number.isFinite(deltaPct) && Number.isFinite(indexDeltaPct)
+        ? deltaPct - indexDeltaPct
+        : null,
+    };
+  }
+  return windows;
+}
+
 function isSeriesFresh(entry) {
   return Boolean(entry) && Date.now() - entry.fetchedAt < SERIES_STALE_MS;
 }
@@ -136,7 +165,8 @@ function writeSeriesCache(slug, series) {
  * @returns {Promise<{
  *   portfolio: Array<{t: string, usdCents: number}>,
  *   index: {sparkline: Array, deltas: object, updatedAt: string}|null,
- *   perHolding: Record<string, {deltaPct30d: number, alphaPct30d: number}>,
+ *   benchmark: {windows: Record<string, {portfolioDeltaPct: number|null, indexDeltaPct: number|null, alphaPct: number|null}>},
+ *   perHolding: Record<string, {deltaPct30d: number|null, alphaPct30d: number|null, windows: Record<string, {deltaPct: number|null, alphaPct: number|null}>}>,
  *   coverage: {included: number, total: number},
  *   attributionUrl: string,
  * }>}
@@ -146,6 +176,7 @@ export async function buildPortfolioSeries({ holdings, summary }) {
     return {
       portfolio: [],
       index: null,
+      benchmark: { windows: {} },
       perHolding: {},
       coverage: { included: 0, total: countCandidateHoldings(holdings) },
       attributionUrl: ATTRIBUTION_URL,
@@ -184,7 +215,7 @@ export async function buildPortfolioSeries({ holdings, summary }) {
     // getCardFmvSeries is documented never-throw, but a violated contract must
     // not collapse the entire chart + every other card's alpha.
     try {
-      const series = await getCardFmvSeries(slug, { window: 30 });
+      const series = await getCardFmvSeries(slug, { window: 365 });
       if (series && series.length) {
         seriesBySlug.set(slug, series);
         writeSeriesCache(slug, series);
@@ -248,24 +279,41 @@ export async function buildPortfolioSeries({ holdings, summary }) {
     return { t: date, usdCents };
   });
 
+  const portfolioMetrics = computeWindowMetrics(portfolio, summary.deltas);
+  const benchmarkWindows = {};
+  for (const days of BENCHMARK_WINDOWS) {
+    const key = windowKey(days);
+    benchmarkWindows[key] = {
+      portfolioDeltaPct: portfolioMetrics[key]?.deltaPct ?? null,
+      indexDeltaPct: Number.isFinite(summary.deltas?.[key]) ? summary.deltas[key] : null,
+      alphaPct: portfolioMetrics[key]?.alphaPct ?? null,
+    };
+  }
+
   const perHolding = {};
   let included = 0;
   for (const [slug, { aligned, covered }] of alignedBySlug) {
     if (covered) included += slugToHoldings.get(slug)?.length ?? 0;
 
     const { first, last } = firstAndLastAligned(aligned);
-    if (!first) continue; // no usable start point (0 or missing) — skip per spec
+    const windows = computeWindowMetrics(aligned, summary.deltas);
+    if (!first && !Number.isFinite(windows.d30?.deltaPct)) continue; // no usable baseline at all
 
-    const deltaPct30d = last / first - 1;
-    const alphaPct30d = deltaPct30d - (summary.deltas?.d30 ?? 0);
+    const deltaPct30d = Number.isFinite(windows.d30?.deltaPct)
+      ? windows.d30.deltaPct
+      : (first ? (last / first - 1) : null);
+    const alphaPct30d = Number.isFinite(deltaPct30d) && Number.isFinite(summary.deltas?.d30)
+      ? deltaPct30d - summary.deltas.d30
+      : null;
     for (const holding of slugToHoldings.get(slug) ?? []) {
-      perHolding[holding.id] = { deltaPct30d, alphaPct30d };
+      perHolding[holding.id] = { deltaPct30d, alphaPct30d, windows };
     }
   }
 
   return {
     portfolio,
     index: { sparkline: summary.sparkline, deltas: summary.deltas, updatedAt: summary.updatedAt },
+    benchmark: { windows: benchmarkWindows },
     perHolding,
     coverage: { included, total: countCandidateHoldings(holdings) },
     attributionUrl: summary.attributionUrl ?? ATTRIBUTION_URL,

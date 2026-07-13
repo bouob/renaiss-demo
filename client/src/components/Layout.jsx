@@ -26,13 +26,20 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
             </span>
           </div>
         </div>
-        <nav>
+        <nav className="topnav-menu" aria-label="Primary navigation">
           <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : undefined)}>
             {t('nav.dashboard')}
           </NavLink>
           <NavLink to="/inventory" className={({ isActive }) => (isActive ? 'active' : undefined)}>
             {t('nav.inventory')}
           </NavLink>
+          <span className="nav-disabled-item" data-tooltip={t('nav.campaignComingSoon')}>
+            <button type="button" className="nav-disabled" disabled aria-label={t('nav.campaignComingSoon')}>
+              {t('nav.campaign')}
+            </button>
+          </span>
+        </nav>
+        <div className="topnav-actions">
           <LanguageSwitcher />
           {authReady && firebaseOk && (
             user ? (
@@ -45,7 +52,7 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
               </button>
             )
           )}
-        </nav>
+        </div>
       </header>
       {authError && (
         <div className="empty" style={{ color: 'var(--clear)', marginBottom: '0.75rem' }} role="alert">

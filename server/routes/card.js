@@ -30,6 +30,8 @@ router.get('/card/:cert', async (req, res) => {
     if (!CERT_SHAPE.test(cert)) {
       return res.status(400).json({ error: 'invalid_cert', found: false });
     }
+    // Only cache well-formed lookups — never a 400 with a public directive.
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
 
     // Looking up a cert counts as "scanned" for related-gate purposes
     rememberHeldCert(cert);
