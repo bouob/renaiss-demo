@@ -43,7 +43,7 @@ test('fail-open: no summary -> 200 empty payload', async () => {
     loadHoldings: async () => [{ cert: 'PSA1', renaissFmv: { found: true, href: '/card/pokemon/base/1' } }],
     getSummary: async () => null,
     buildPortfolioSeries: async ({ summary }) => ({
-      portfolio: [], index: null, perHolding: {},
+      portfolio: [], index: null, benchmark: { windows: {} }, perHolding: {},
       coverage: { included: 0, total: 1 }, attributionUrl: 'https://index.renaissos.com',
     }),
   });
@@ -59,10 +59,18 @@ test('happy path: passes holdings + summary to builder, returns its payload', as
   const router = createPortfolioSeriesRouter({
     requireAuth: fakeAuth,
     loadHoldings: async (uid, wallet) => { seen = { uid, wallet }; return [{ cert: 'PSA1', renaissFmv: { found: true, href: '/card/pokemon/base/1' } }]; },
-    getSummary: async () => ({ sparkline: [{ t: '2026-01-01', usdCents: 100 }], deltas: { d30: 0.02 } }),
+    getSummary: async () => ({ sparkline: [{ t: '2026-01-01', usdCents: 100 }], deltas: { d7: 0.01, d30: 0.02, d365: 0.03 } }),
     buildPortfolioSeries: async () => ({
       portfolio: [{ t: '2026-01-01', usdCents: 100 }], index: { sparkline: [] },
-      perHolding: {}, coverage: { included: 1, total: 1 }, attributionUrl: 'https://index.renaissos.com',
+      benchmark: { windows: { d7: { portfolioDeltaPct: 0.02, indexDeltaPct: 0.01, alphaPct: 0.01 } } },
+      perHolding: {
+        a1: {
+          deltaPct30d: 0.04,
+          alphaPct30d: 0.02,
+          windows: { d7: { deltaPct: 0.02, alphaPct: 0.01 } },
+        },
+      },
+      coverage: { included: 1, total: 1 }, attributionUrl: 'https://index.renaissos.com',
     }),
   });
   const { status, body } = await get(appWith(router), '/portfolio-series?wallet=0xABCDEF0123456789ABCDEF0123456789ABCDEF01');
@@ -70,4 +78,6 @@ test('happy path: passes holdings + summary to builder, returns its payload', as
   assert.equal(seen.uid, 'u1');
   assert.equal(seen.wallet, '0xabcdef0123456789abcdef0123456789abcdef01'); // lower-cased
   assert.equal(body.coverage.included, 1);
+  assert.equal(body.benchmark.windows.d7.alphaPct, 0.01);
+  assert.equal(body.perHolding.a1.windows.d7.deltaPct, 0.02);
 });

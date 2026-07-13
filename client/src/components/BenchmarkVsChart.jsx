@@ -1,34 +1,26 @@
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { rebaseToShared, computeAlpha } from '../lib/benchmarkSeries.js';
+import InteractiveTrendChart from './InteractiveTrendChart.jsx';
 
-const W = 480;
-const H = 150;
-const PAD = 10;
 const PORTFOLIO_STROKE = '#7dd3fc'; // inventory line
 const INDEX_STROKE = '#a78bfa';     // index line
-
-function pathFrom(series, min, span) {
-  const coords = series.map((pt, i) => {
-    const x = PAD + (i / Math.max(1, series.length - 1)) * (W - PAD * 2);
-    const y = H - PAD - ((pt.v - min) / span) * (H - PAD * 2);
-    return `${x},${y}`;
-  });
-  return `M ${coords.join(' L ')}`;
-}
 
 function formatSignedPct(n) {
   if (!Number.isFinite(n)) return '—';
   return `${n >= 0 ? '+' : ''}${n.toFixed(2)}%`;
 }
 
-export default function BenchmarkVsChart({ portfolio, index, coverage }) {
+const WINDOW_DAYS = { d7: 7, d30: 30, d365: 365 };
+
+export default function BenchmarkVsChart({ portfolio, index, benchmark, coverage, windowKey = 'd30', dateLocale = 'en-US' }) {
   const { t } = useTranslation();
   const [modalOpen, setModalOpen] = useState(false);
+  const windowDays = WINDOW_DAYS[windowKey] ?? 30;
 
   const rebased = useMemo(
-    () => rebaseToShared(portfolio, index?.sparkline),
-    [portfolio, index],
+    () => rebaseToShared(portfolio, index?.sparkline, { windowDays }),
+    [portfolio, index, windowDays],
   );
 
   if (!rebased) {
@@ -36,16 +28,20 @@ export default function BenchmarkVsChart({ portfolio, index, coverage }) {
   }
 
   const { portfolioRebased, indexRebased } = rebased;
-  const alpha = computeAlpha(portfolioRebased, indexRebased);
-  const allV = [...portfolioRebased, ...indexRebased].map((p) => p.v);
-  const min = Math.min(...allV);
-  const max = Math.max(...allV);
-  const span = max - min || 1;
+  const fallbackAlpha = computeAlpha(portfolioRebased, indexRebased);
+  const windowAlpha = benchmark?.windows?.[windowKey]?.alphaPct;
+  const alpha = Number.isFinite(windowAlpha) ? windowAlpha * 100 : fallbackAlpha;
+  const chartData = portfolioRebased.map((point, indexAtPoint) => ({
+    t: point.t,
+    portfolio: point.v,
+    index: indexRebased[indexAtPoint]?.v,
+  }));
 
   const summaryKey = Math.abs(alpha) < 0.05
     ? 'benchmark.vsMatching'
     : alpha > 0 ? 'benchmark.vsBeating' : 'benchmark.vsTrailing';
-  const summary = t(summaryKey, { pct: formatSignedPct(Math.abs(alpha)) });
+  const summary = t(`${summaryKey}Caption`);
+  const alphaColor = Math.abs(alpha) < 0.05 ? 'text-muted' : alpha > 0 ? 'text-pos' : 'text-neg';
 
   return (
     <div className="benchmark-vs">
@@ -56,15 +52,22 @@ export default function BenchmarkVsChart({ portfolio, index, coverage }) {
         </button>
       </div>
 
-      <p className={`benchmark-vs-summary ${alpha >= 0 ? 'text-pos' : 'text-neg'}`}>{summary}</p>
+      <div className="benchmark-vs-performance">
+        <p className={`index-level benchmark-vs-alpha ${alphaColor}`}>{formatSignedPct(alpha)}</p>
+        <p className="index-level-caption benchmark-vs-summary">{summary}</p>
+      </div>
 
       <div className="index-chart-frame">
-        <svg className="sparkline" viewBox={`0 0 ${W} ${H}`} role="img" aria-label={t('benchmark.vsTitle')}>
-          <path d={pathFrom(indexRebased, min, span)} fill="none" stroke={INDEX_STROKE}
-                strokeWidth="2" strokeDasharray="5 4" strokeLinejoin="round" strokeLinecap="round" />
-          <path d={pathFrom(portfolioRebased, min, span)} fill="none" stroke={PORTFOLIO_STROKE}
-                strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" />
-        </svg>
+        <InteractiveTrendChart
+          data={chartData}
+          series={[
+            { key: 'portfolio', name: t('benchmark.chartPortfolio'), color: PORTFOLIO_STROKE, strokeWidth: 2.5 },
+            { key: 'index', name: t('benchmark.chartIndex'), color: INDEX_STROKE, dashed: true },
+          ]}
+          dateLocale={dateLocale}
+          formatValue={(value) => `${Number(value).toFixed(2)}`}
+          ariaLabel={t('benchmark.vsTitle')}
+        />
       </div>
 
       <div className="benchmark-legend">

@@ -1,33 +1,27 @@
 /**
- * Lightweight Gemini merchant verdict for Merchant Copilot.
- * Decision is client-computed; model only explains (Dokipoki contract shape).
- * Uses REST generateContent — no @google/generative-ai dependency.
+ * Daily market insight generation for the Renaiss OS Index.
+ * Global market only: no user wallet state is part of this payload.
  */
 
-// Must match a model the shared GEMINI_API_KEY can actually call — Dokipoki
-// runs 2.5-flash-lite on the same key (server/config/geminiModels.js).
-// Fallbacks cover keys that only have older free-tier models enabled.
 const MODEL_CANDIDATES = [
   process.env.GEMINI_MODEL,
   'gemini-2.5-flash-lite',
   'gemini-2.0-flash-lite',
   'gemini-2.0-flash',
 ].filter(Boolean);
-// de-dupe while preserving order
 const MODELS = [...new Set(MODEL_CANDIDATES)];
 
 const API_ROOT = 'https://generativelanguage.googleapis.com/v1beta';
 const MAX_ATTEMPTS = 3;
 const RETRY_DELAYS_MS = [800, 2000];
 
-const MERCHANT_SYSTEM_PROMPT = `You are a Pokémon TCG market analyst writing a short verdict for a merchant/dealer
-deciding whether to promote, hold, or clear a graded card from inventory.
-The promote/hold/clear decision has ALREADY been made by a separate rules engine —
-your job is only to explain that decision using the numbers provided. Never
-contradict the given decision or propose a different one.
+const MARKET_SYSTEM_PROMPT = `You are a trading-card market analyst writing a compact daily market feed.
+Use only the numbers provided. Do not invent catalysts, macro news, or causes.
 Output a JSON object with exactly four top-level keys: "en", "zh_TW", "ja", and "ko".
-Under each key: "verdict" (one sentence), "rationale" (2-4 lines each starting with "• "), "caveats" (0-3 short strings).
-Valid JSON only — no markdown fences.`;
+Under each locale key, output exactly three keys: "short7d", "mid30d", and "long365d".
+Each period object must contain "title" and "body".
+"title" must be short (3-10 words). "body" must be 2-4 concise sentences.
+Valid JSON only. No markdown fences.`;
 
 const SAFETY_OFF = [
   { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -42,39 +36,17 @@ function normalizeText(value) {
   return text || null;
 }
 
-function normalizeRationale(value) {
-  if (Array.isArray(value)) {
-    const lines = value
-      .map(normalizeText)
-      .filter(Boolean)
-      .map((line) => (line.startsWith('•') ? line : `• ${line}`));
-    return lines.length ? lines.join('\n') : null;
-  }
-  return normalizeText(value);
+function validateSection(section) {
+  if (!section || typeof section !== 'object') return null;
+  const title = normalizeText(section.title);
+  const body = normalizeText(section.body);
+  if (!title || !body) return null;
+  if (title.length < 3 || title.length > 80) return null;
+  if (body.length < 24 || body.length > 900) return null;
+  return { title, body };
 }
 
-function normalizeCaveats(value) {
-  if (Array.isArray(value)) {
-    return value.map(normalizeText).filter(Boolean).slice(0, 3);
-  }
-  const single = normalizeText(value);
-  return single ? [single] : [];
-}
-
-function validateLocaleContent(content) {
-  if (!content || typeof content !== 'object') return null;
-  const verdict = normalizeText(content.verdict);
-  let rationale = normalizeRationale(content.rationale);
-  if (!verdict || !rationale) return null;
-  // Soften slightly vs the first ship: short but real sentences still pass.
-  if (verdict.length < 6 || verdict.length > 320) return null;
-  if (rationale.length > 900) rationale = rationale.slice(0, 900);
-  if (rationale.replace(/\s+/g, '').length < 12) return null;
-  const caveats = normalizeCaveats(content.caveats);
-  return { verdict, rationale, caveats };
-}
-
-export function validateMerchantResponse(parsed) {
+export function validateMarketInsightResponse(parsed) {
   if (!parsed || typeof parsed !== 'object') return null;
   const localeVariants = {
     en: ['en'],
@@ -82,16 +54,22 @@ export function validateMerchantResponse(parsed) {
     ja: ['ja', 'jp', 'japanese'],
     ko: ['ko', 'kr', 'korean'],
   };
-  const result = {};
+  const periods = ['short7d', 'mid30d', 'long365d'];
+  const out = {};
   for (const [key, aliases] of Object.entries(localeVariants)) {
     const raw = aliases
       .map((alias) => parsed[alias])
       .find((value) => value && typeof value === 'object');
-    const loc = validateLocaleContent(raw);
-    if (!loc) return null;
-    result[key] = loc;
+    if (!raw) return null;
+    const loc = {};
+    for (const period of periods) {
+      const valid = validateSection(raw[period]);
+      if (!valid) return null;
+      loc[period] = valid;
+    }
+    out[key] = loc;
   }
-  return result;
+  return out;
 }
 
 export function extractJson(text) {
@@ -115,29 +93,22 @@ export function extractJson(text) {
   }
 }
 
-export function buildMerchantPrompt(cardMeta, merchantContext) {
-  const { cardName, setName, grade } = cardMeta ?? {};
-  const {
-    decision,
-    alphaPct30d,
-    thinMarketData,
-    renaissFmv = {},
-  } = merchantContext ?? {};
-  const alphaPct = Number.isFinite(alphaPct30d)
-    ? `${alphaPct30d >= 0 ? '+' : ''}${(alphaPct30d * 100).toFixed(1)}%`
-    : 'unknown';
-  const price = Number.isFinite(renaissFmv?.priceUsdCents)
-    ? `$${(renaissFmv.priceUsdCents / 100).toFixed(2)}`
-    : 'unavailable';
+function formatPct(value) {
+  if (!Number.isFinite(value)) return 'n/a';
+  return `${value >= 0 ? '+' : ''}${(value * 100).toFixed(2)}%`;
+}
 
+export function buildMarketInsightPrompt(summary = {}) {
   return [
-    'Explain the Merchant Copilot decision. Return JSON with keys en, zh_TW, ja, ko.',
-    `Card: ${cardName || 'Unknown'} — ${setName || 'Unknown'} (${grade || 'graded'})`,
-    `Decision (final): ${decision || 'hold'}`,
-    `Alpha vs index 30d: ${alphaPct}`,
-    `Thin market data: ${thinMarketData ? 'true' : 'false'}`,
-    `Renaiss reference price: ${price}${renaissFmv?.confidence ? ` (${renaissFmv.confidence})` : ''}`,
-    'Each locale: verdict, rationale (• bullets), caveats[].',
+    'Write the daily market feed from the provided index snapshot only.',
+    `Market: ${summary.label || summary.game || 'Unknown'}`,
+    `Index level: ${Number.isFinite(summary.value) ? summary.value.toFixed(2) : 'n/a'}`,
+    `Past 7 days: ${formatPct(summary.deltas?.d7)}`,
+    `Past 30 days: ${formatPct(summary.deltas?.d30)}`,
+    `Past 365 days: ${formatPct(summary.deltas?.d365)}`,
+    `Constituent count: ${Number.isFinite(summary.constituentCount) ? summary.constituentCount : 'n/a'}`,
+    `Updated at: ${summary.updatedAt || 'n/a'}`,
+    'Return JSON with locales en, zh_TW, ja, ko. Each locale needs short7d, mid30d, long365d, each with title and body.',
   ].join('\n');
 }
 
@@ -156,20 +127,16 @@ function extractCandidateText(data) {
 }
 
 function isRetryableStatus(status) {
-  return status === 429 || status === 500 || status === 503 || status === 502;
+  return status === 429 || status === 500 || status === 502 || status === 503;
 }
 
-/**
- * Call one model once. Throws with .code = gemini_upstream | gemini_invalid_output.
- * @returns {object} validated multi-locale content
- */
 async function callModelOnce(key, model, prompt) {
   const url = `${API_ROOT}/models/${model}:generateContent?key=${encodeURIComponent(key)}`;
   const res = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
-      systemInstruction: { parts: [{ text: MERCHANT_SYSTEM_PROMPT }] },
+      systemInstruction: { parts: [{ text: MARKET_SYSTEM_PROMPT }] },
       contents: [{ role: 'user', parts: [{ text: prompt }] }],
       generationConfig: {
         temperature: 0.4,
@@ -187,7 +154,6 @@ async function callModelOnce(key, model, prompt) {
     err.status = res.status;
     err.detail = `model=${model} ${body.slice(0, 300)}`;
     err.retryable = isRetryableStatus(res.status);
-    // 404 model-not-found: try next model, not the same model again.
     err.modelMissing = res.status === 404;
     throw err;
   }
@@ -196,7 +162,6 @@ async function callModelOnce(key, model, prompt) {
   const finishReason = data?.candidates?.[0]?.finishReason ?? null;
   const blockReason = data?.promptFeedback?.blockReason ?? null;
   const text = extractCandidateText(data);
-
   if (!text) {
     const err = new Error('gemini_empty_candidates');
     err.code = 'gemini_upstream';
@@ -206,7 +171,7 @@ async function callModelOnce(key, model, prompt) {
   }
 
   const parsed = extractJson(text);
-  const validated = validateMerchantResponse(parsed);
+  const validated = validateMarketInsightResponse(parsed);
   if (!validated) {
     const err = new Error('gemini_invalid_output');
     err.code = 'gemini_invalid_output';
@@ -217,14 +182,14 @@ async function callModelOnce(key, model, prompt) {
   return validated;
 }
 
-export async function generateMerchantVerdict(cardMeta, merchantContext) {
+export async function generateMarketInsight(summary) {
   if (!isGeminiConfigured()) {
     const err = new Error('gemini_unconfigured');
     err.code = 'gemini_unconfigured';
     throw err;
   }
   const key = process.env.GEMINI_API_KEY;
-  const prompt = buildMerchantPrompt(cardMeta, merchantContext);
+  const prompt = buildMarketInsightPrompt(summary);
 
   let lastError = null;
   for (const model of MODELS) {
@@ -233,7 +198,6 @@ export async function generateMerchantVerdict(cardMeta, merchantContext) {
         return await callModelOnce(key, model, prompt);
       } catch (err) {
         lastError = err;
-        // Wrong model name → skip to next candidate immediately.
         if (err.modelMissing) break;
         if (!err.retryable || attempt >= MAX_ATTEMPTS - 1) break;
         await sleep(RETRY_DELAYS_MS[attempt] ?? 2000);
@@ -247,7 +211,7 @@ export async function generateMerchantVerdict(cardMeta, merchantContext) {
   throw err;
 }
 
-export function pickLocaleContent(validated, locale) {
+export function pickLocaleMarketInsight(validated, locale) {
   if (!validated) return null;
   if (locale === 'zh-TW' || locale === 'zh_TW') return validated.zh_TW;
   if (locale === 'ja') return validated.ja;

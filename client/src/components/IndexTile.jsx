@@ -3,8 +3,10 @@
  * Level left, 7d/30d right, sparkline full width. No stretch void.
  */
 import { useTranslation } from 'react-i18next';
-import Sparkline from './Sparkline.jsx';
-import { RENAISS_INDEX_BASE_URL } from '../lib/renaissIndexUrl.js';
+import InteractiveTrendChart from './InteractiveTrendChart.jsx';
+import InfoHint from './InfoHint.jsx';
+
+const WINDOW_DAYS = { d7: 7, d30: 30, d365: 365 };
 
 function formatPct(value) {
   if (value == null || !Number.isFinite(value)) return '—';
@@ -40,15 +42,22 @@ function deltasSafe(v) {
   return Number.isFinite(v) ? v : null;
 }
 
-export default function IndexTile({ index, dateLocale = 'en-US' }) {
+function sliceTrailing(points, days) {
+  if (!Array.isArray(points)) return [];
+  if (!Number.isFinite(days) || days <= 0) return points;
+  return points.slice(-(Math.trunc(days) + 1));
+}
+
+export default function IndexTile({ index, dateLocale = 'en-US', windowKey = 'd30' }) {
   const { t } = useTranslation();
   if (!index) return null;
 
-  const d7 = deltasSafe(index.deltas?.d7);
-  const d30 = deltasSafe(index.deltas?.d30);
-  const attributionUrl = index.attributionUrl || RENAISS_INDEX_BASE_URL;
+  const windowDays = WINDOW_DAYS[windowKey] ?? 30;
+  const delta = deltasSafe(index.deltas?.[windowKey]);
+  const sparkline = sliceTrailing(index.sparkline, windowDays);
   const level = index.value;
   const title = index.label || index.game || t('index.pokemonLabel');
+  const chartData = sparkline.map(({ t: pointDate, usdCents }) => ({ t: pointDate, index: usdCents }));
 
   return (
     <div className="index-tile-inner">
@@ -62,13 +71,18 @@ export default function IndexTile({ index, dateLocale = 'en-US' }) {
           <p className="index-level-caption">{t('index.levelLabel')}</p>
         </div>
         <div className="index-deltas">
-          <DeltaStat label={t('index.change7d', { defaultValue: t('index.d7') })} value={d7} />
-          <DeltaStat label={t('index.change30d', { defaultValue: t('index.d30') })} value={d30} />
+          <DeltaStat label={t(`index.change${windowDays}d`, { defaultValue: t(`index.${windowKey}`) })} value={delta} />
         </div>
       </div>
 
       <div className="index-chart-frame">
-        <Sparkline points={index.sparkline} height={132} width={480} />
+        <InteractiveTrendChart
+          data={chartData}
+          series={[{ key: 'index', name: title, color: '#00f0ff' }]}
+          dateLocale={dateLocale}
+          formatValue={(value) => formatLevel(value, dateLocale)}
+          ariaLabel={t('benchmark.tabIndex')}
+        />
       </div>
 
       <div className="index-tile-foot">
@@ -80,14 +94,10 @@ export default function IndexTile({ index, dateLocale = 'en-US' }) {
             ? ` · ${t('index.updated', { when: new Date(index.updatedAt).toLocaleString(dateLocale) })}`
             : null}
         </p>
-        <a
-          className="index-source-link"
-          href={attributionUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          {t('index.sourcePrefix')} {t('index.sourceLabel')} ↗
-        </a>
+        <div className="index-methodology-note">
+          <span>{t('index.methodologyLabel')}</span>
+          <InfoHint label={t('index.methodologyHint')} />
+        </div>
       </div>
     </div>
   );

@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import Sparkline from './Sparkline.jsx';
+import InteractiveTrendChart from './InteractiveTrendChart.jsx';
 import StrengthBar from './StrengthBar.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
@@ -26,6 +26,7 @@ export default function HoldingDetailModal({
   defaultWallet = null,
 }) {
   const { t, i18n } = useTranslation();
+  const initialSnapshotRef = useRef(null);
   const [series, setSeries] = useState(item?.series30d ?? []);
   const [seriesLoading, setSeriesLoading] = useState(false);
   const [returnPct, setReturnPct] = useState(item?.returnPct30d ?? null);
@@ -47,18 +48,35 @@ export default function HoldingDetailModal({
   const [aiError, setAiError] = useState(null);
   const [artBroken, setArtBroken] = useState(false);
 
+  const chartData = useMemo(
+    () => (Array.isArray(series) ? series : [])
+      .map((point) => ({
+        t: point?.t,
+        price: point?.usdCents,
+      }))
+      .filter((point) => point.t && Number.isFinite(point.price)),
+    [series],
+  );
+
   const cert = item?.cert || item?.id;
   const decision = item?.decision || 'hold';
 
   useEffect(() => {
     if (!item) return undefined;
-    setCostDraft(Number.isFinite(item.cost) ? String(item.cost) : '');
-    setListDraft(
-      Number.isFinite(item.listPrice) ? String(item.listPrice)
+    const nextSnapshot = {
+      status: item.status || 'active',
+      cost: Number.isFinite(item.cost) ? String(item.cost) : '',
+      listPrice: Number.isFinite(item.listPrice)
+        ? String(item.listPrice)
         : (Number.isFinite(item.suggested) ? String(Number(item.suggested).toFixed(2)) : ''),
-    );
-    setNotesDraft(item.notes || '');
-    setDecisionDraft(item.decision || 'hold');
+      notes: item.notes || '',
+      decision: item.decision || 'hold',
+    };
+    initialSnapshotRef.current = nextSnapshot;
+    setCostDraft(nextSnapshot.cost);
+    setListDraft(nextSnapshot.listPrice);
+    setNotesDraft(nextSnapshot.notes);
+    setDecisionDraft(nextSnapshot.decision);
     setTab('inventory');
     setSeries(Array.isArray(item.series30d) ? item.series30d : []);
     setReturnPct(item.returnPct30d ?? null);
@@ -86,7 +104,7 @@ export default function HoldingDetailModal({
       }
     })();
     return () => { cancelled = true; };
-  }, [item, cert]);
+  }, [cert]);
 
   useEffect(() => {
     if (!item) return undefined;
@@ -148,6 +166,18 @@ export default function HoldingDetailModal({
     }
   }
 
+  function resetToSnapshot() {
+    const snapshot = initialSnapshotRef.current;
+    if (!snapshot) return;
+    setCostDraft(snapshot.cost);
+    setListDraft(snapshot.listPrice);
+    setNotesDraft(snapshot.notes);
+    setDecisionDraft(snapshot.decision);
+    if ((item.status || 'active') !== snapshot.status) {
+      onUpdateStatus?.(cert, snapshot.status);
+    }
+  }
+
   async function loadAi() {
     if (!user) {
       setAiError(t('detail.aiNeedSignIn'));
@@ -164,7 +194,13 @@ export default function HoldingDetailModal({
         name: item.name,
         setName: item.setName,
         grade: item.grade,
-        locale: i18n.language === 'zh-TW' ? 'zh-TW' : (i18n.language === 'ja' ? 'ja' : 'en'),
+        locale: i18n.language === 'zh-TW'
+          ? 'zh-TW'
+          : i18n.language === 'ja'
+            ? 'ja'
+            : i18n.language === 'ko'
+              ? 'ko'
+              : 'en',
         merchantContext: {
           decision: item.decision || 'hold',
           alphaPct30d: item.alphaPct30d ?? null,
@@ -188,7 +224,8 @@ export default function HoldingDetailModal({
     ? `${String(item.packPaymentTxHash).slice(0, 8)}…${String(item.packPaymentTxHash).slice(-4)}`
     : null;
   const currentStatus = item.status || 'active';
-  const isListed = currentStatus !== 'delisted' && currentStatus !== 'sold';
+  const isSold = currentStatus === 'sold';
+  const displayedPnl = isSold ? item.realizedPnlUsd : item.pnl;
 
   const notice = adjacentNotice(related);
 
@@ -288,12 +325,14 @@ export default function HoldingDetailModal({
 
         <div className="modal-body modal-body-detail">
           <div className="modal-art">
-            {/* Index art is preferred; rows saved before indexImageUrl existed
-                only carry the persisted chain image. */}
-            {(item.indexImageUrl || item.imageUrl) && !artBroken ? (
+            {/* Inventory detail intentionally uses the index artwork only. */}
+            {item.indexImageUrl && !artBroken ? (
               <img
-                src={item.indexImageUrl || item.imageUrl}
+                src={item.indexImageUrl}
                 alt=""
+                loading="lazy"
+                decoding="async"
+                fetchPriority="low"
                 referrerPolicy="no-referrer"
                 onError={() => setArtBroken(true)}
               />
@@ -345,10 +384,10 @@ export default function HoldingDetailModal({
                 <strong>{formatUsd(item.cost)}</strong>
               </div>
               <div className="stat-cell">
-                <span className="label">{t('detail.pnl')}</span>
-                <strong className={Number.isFinite(item.pnl) ? (item.pnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
-                  {formatUsdSigned(item.pnl)}
-                  {Number.isFinite(item.pnlPct) ? ` (${(item.pnlPct * 100).toFixed(1)}%)` : ''}
+                <span className="label">{t(isSold ? 'detail.realizedPnl' : 'detail.unrealizedPnl')}</span>
+                <strong className={Number.isFinite(displayedPnl) ? (displayedPnl >= 0 ? 'text-pos' : 'text-neg') : ''}>
+                  {formatUsdSigned(displayedPnl)}
+                  {Number.isFinite(item.pnlPct) && !isSold ? ` (${(item.pnlPct * 100).toFixed(1)}%)` : ''}
                 </strong>
               </div>
               <div className="stat-cell">
@@ -375,9 +414,22 @@ export default function HoldingDetailModal({
                 <div>
                   <p className="label">{t('detail.trend30d')}</p>
                   {seriesLoading && <p className="small">{t('detail.loadingSeries')}</p>}
-                  {!seriesLoading && series.length > 1 ? (
+                  {!seriesLoading && chartData.length > 1 ? (
                     <>
-                      <Sparkline points={series} height={120} />
+                      <div className="index-chart-frame holding-detail-chart-frame">
+                        <InteractiveTrendChart
+                          data={chartData}
+                          series={[{
+                            key: 'price',
+                            name: t('detail.fmv'),
+                            color: '#00f0ff',
+                            strokeWidth: 2.5,
+                          }]}
+                          dateLocale={i18n.language || 'en-US'}
+                          formatValue={formatUsdCents}
+                          ariaLabel={t('detail.trend30d')}
+                        />
+                      </div>
                       {Number.isFinite(returnPct) && (
                         <p className="small">
                           {t('detail.return30d')}{' '}
@@ -439,45 +491,60 @@ export default function HoldingDetailModal({
                     onChange={(e) => setNotesDraft(e.target.value.slice(0, 1000))}
                   />
                 </div>
-                <div className="form-row" style={{ marginBottom: 0 }}>
+                <div className="holding-detail-settings">
                   <div>
-                    <p className="label">{t('detail.listingStatus')}</p>
-                    <div className="actions holding-detail-actions">
+                    <p className="label">{t('detail.inventoryStatus')}</p>
+                    <div className="actions holding-detail-choice-grid">
                       <button
                         type="button"
-                        className={`btn btn-sm ${isListed ? 'btn-primary' : 'btn-ghost'}`}
+                        aria-pressed={currentStatus === 'active'}
+                        className={`btn btn-sm ${currentStatus === 'active' ? 'btn-primary' : 'btn-ghost'}`}
                         onClick={() => onUpdateStatus?.(cert, 'active')}
                       >
-                        {t('detail.listedOn')}
+                        {t('detail.listed')}
                       </button>
                       <button
                         type="button"
-                        className={`btn btn-sm ${!isListed && currentStatus !== 'sold' ? 'btn-primary' : 'btn-ghost'}`}
+                        aria-pressed={currentStatus === 'delisted'}
+                        className={`btn btn-sm ${currentStatus === 'delisted' ? 'btn-primary' : 'btn-ghost'}`}
                         onClick={() => onUpdateStatus?.(cert, 'delisted')}
                       >
-                        {t('detail.listedOff')}
+                        {t('detail.delisted')}
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={isSold}
+                        className={`btn btn-sm ${isSold ? 'btn-primary' : 'btn-ghost'}`}
+                        onClick={() => onUpdateStatus?.(cert, 'sold')}
+                      >
+                        {t('detail.sold')}
                       </button>
                     </div>
                   </div>
                   <div>
-                    <p className="label">{t('detail.merchDecision')}</p>
-                    <select
-                      className="select"
-                      value={decisionDraft}
-                      onChange={(e) => setDecisionDraft(e.target.value)}
-                    >
-                      <option value="promote">{t('decision.promote')}</option>
-                      <option value="hold">{t('decision.hold')}</option>
-                      <option value="clear">{t('decision.clear')}</option>
-                    </select>
+                    <p className="label">{t('detail.campaign')}</p>
+                    <div className="holding-detail-campaign-grid">
+                      <select
+                        className="select"
+                        value={decisionDraft === 'promote' || decisionDraft === 'clear' ? decisionDraft : 'hold'}
+                        onChange={(e) => setDecisionDraft(e.target.value)}
+                      >
+                        <option value="promote">{t('decision.promote')}</option>
+                        <option value="clear">{t('decision.clear')}</option>
+                        <option value="hold">{t('decision.other')}</option>
+                      </select>
+                      <select className="select" value="" disabled aria-label={t('detail.campaignComingSoon')}>
+                        <option value="">{t('detail.campaignComingSoon')}</option>
+                      </select>
+                    </div>
                   </div>
                 </div>
 
-                <div className="actions holding-detail-actions">
-                  <button type="button" className="btn btn-danger btn-sm" onClick={() => onUpdateStatus?.(cert, 'sold')}>
-                    {t('detail.markSold')}
+                <div className="modal-actions holding-detail-save-row" style={{ marginTop: '0.6rem' }}>
+                  <button type="button" className="btn btn-ghost btn-sm holding-detail-reset" onClick={resetToSnapshot}>
+                    {t('detail.reset')}
                   </button>
-                  <button type="button" className="btn btn-primary btn-sm" onClick={saveAll}>
+                  <button type="button" className="btn btn-primary btn-sm holding-detail-save" onClick={saveAll}>
                     {t('common.save')}
                   </button>
                 </div>

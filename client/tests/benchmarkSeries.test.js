@@ -60,6 +60,25 @@ describe('rebaseToShared', () => {
     const out = rebaseToShared(portfolio, index);
     assert.equal(out.baseDate, '2026-06-02');
   });
+
+  it('limits the chart to the selected trailing window when requested', () => {
+    const portfolio = [
+      { t: '2026-06-01', usdCents: 100 },
+      { t: '2026-06-02', usdCents: 110 },
+      { t: '2026-06-03', usdCents: 120 },
+      { t: '2026-06-04', usdCents: 130 },
+    ];
+    const index = [
+      { t: '2026-06-01', usdCents: 100 },
+      { t: '2026-06-02', usdCents: 105 },
+      { t: '2026-06-03', usdCents: 110 },
+      { t: '2026-06-04', usdCents: 115 },
+    ];
+    const out = rebaseToShared(portfolio, index, { windowDays: 2 });
+    assert.equal(out.baseDate, '2026-06-02');
+    assert.deepEqual(out.portfolioRebased.map((p) => p.t), ['2026-06-02', '2026-06-03', '2026-06-04']);
+    assert.deepEqual(out.indexRebased.map((p) => p.t), ['2026-06-02', '2026-06-03', '2026-06-04']);
+  });
 });
 
 describe('computeAlpha', () => {

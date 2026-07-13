@@ -7,11 +7,11 @@ import {
 } from '../src/lib/inventorySort.js';
 
 const rows = [
-  { cert: 'a', name: 'Alpha', fmvUsd: 100, pnl: -10 },
-  { cert: 'b', name: 'Bravo', fmvUsd: 500, pnl: 50 },
-  { cert: 'c', name: 'Charlie', fmvUsd: null, pnl: null },
-  { cert: 'd', name: 'Delta', fmvUsd: 200, pnl: -200 },
-  { cert: 'e', name: 'Echo', fmvUsd: 500, pnl: 5 },
+  { cert: 'a', name: 'Alpha', cost: 110, fmvUsd: 100, pnl: -10 },
+  { cert: 'b', name: 'Bravo', cost: 450, fmvUsd: 500, pnl: 50 },
+  { cert: 'c', name: 'Charlie', cost: null, fmvUsd: null, pnl: null },
+  { cert: 'd', name: 'Delta', cost: 400, fmvUsd: 200, pnl: -200 },
+  { cert: 'e', name: 'Echo', cost: 495, fmvUsd: 500, pnl: 5 },
 ];
 
 describe('normalizeSortKey / normalizeSortDir', () => {
@@ -27,6 +27,16 @@ describe('sortInventoryItems', () => {
   it('sorts by FMV descending by default shape', () => {
     const sorted = sortInventoryItems(rows, 'fmv', 'desc');
     assert.deepEqual(sorted.map((r) => r.cert), ['b', 'e', 'd', 'a', 'c']);
+  });
+
+  it('sorts by cost descending with null last', () => {
+    const sorted = sortInventoryItems(rows, 'cost', 'desc');
+    assert.deepEqual(sorted.map((r) => r.cert), ['e', 'b', 'd', 'a', 'c']);
+  });
+
+  it('sorts by cost ascending with null last', () => {
+    const sorted = sortInventoryItems(rows, 'cost', 'asc');
+    assert.deepEqual(sorted.map((r) => r.cert), ['a', 'd', 'b', 'e', 'c']);
   });
 
   it('sorts by FMV ascending and keeps null last', () => {

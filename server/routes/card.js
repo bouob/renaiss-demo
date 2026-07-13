@@ -26,6 +26,7 @@ function seriesReturn(points) {
 
 router.get('/card/:cert', async (req, res) => {
   try {
+    res.set('Cache-Control', 'public, max-age=300, stale-while-revalidate=3600');
     const cert = String(req.params.cert ?? '').trim();
     if (!CERT_SHAPE.test(cert)) {
       return res.status(400).json({ error: 'invalid_cert', found: false });

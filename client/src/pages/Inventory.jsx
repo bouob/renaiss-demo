@@ -6,10 +6,7 @@ import {
   BadgeCheck,
   LayoutGrid,
   List,
-  Minus,
   ScanLine,
-  TrendingDown,
-  TrendingUp,
   Upload,
 } from 'lucide-react';
 import {
@@ -57,25 +54,11 @@ import StrengthBar from '../components/StrengthBar.jsx';
 const PAGE_SIZE = 50;
 const VIEW_PREFS_KEY = 'merchant_inventory_view';
 
-const DECISION_ICON = {
-  promote: TrendingUp,
-  hold: Minus,
-  clear: TrendingDown,
-};
-
-function DecisionBadge({ decision, className = '' }) {
+function DecisionTag({ decision, className = '' }) {
   const { t } = useTranslation();
-  const Icon = DECISION_ICON[decision] || Minus;
   const label = t(`decision.${decision}`);
   return (
-    <span
-      className={`decision-badge ${decision} ${className}`.trim()}
-      role="img"
-      aria-label={label}
-      title={label}
-    >
-      <Icon size={16} strokeWidth={2.5} aria-hidden="true" />
-    </span>
+    <span className={`chip inventory-decision-tag ${decision} ${className}`.trim()}>{label}</span>
   );
 }
 
@@ -166,9 +149,20 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setItems(nextItems);
       setDefaultWallet(demoW);
 
+      // The linked wallet lives in localStorage and is only written on a scan
+      // confirm — a returning user on a fresh browser/origin has none, which
+      // leaves the Benchmark Vs tab stuck on its no-wallet state even though
+      // their inventory loads from the server. Re-hydrate it from server data
+      // (defaultWallet first, then any wallet on the items) so the Vs chart
+      // works without requiring a re-scan.
       const last = readLastWallet();
-      setLinkedWallet(last);
-      const wallets = collectSalesWallets(nextItems, demoW, last);
+      const recovered = last
+        || normalizeWallet(demoW)
+        || collectSalesWallets(nextItems, demoW, '')[0]
+        || '';
+      if (!last && recovered) rememberLastWallet(recovered);
+      setLinkedWallet(recovered);
+      const wallets = collectSalesWallets(nextItems, demoW, recovered);
       if (wallets.length === 0) {
         setSales([]);
         setSalesSummary(null);
@@ -266,6 +260,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const pnlPct = Number.isFinite(pnl) && Number.isFinite(cost) && cost !== 0
       ? (pnl / cost)
       : null;
+    const matchedSale = sales.find((sale) => String(sale?.cert || '') === String(it.cert || it.id || ''));
+    const realizedPnlUsd = Number.isFinite(it.realizedPnlUsd)
+      ? it.realizedPnlUsd
+      : (Number.isFinite(matchedSale?.realizedPnlUsd) ? matchedSale.realizedPnlUsd : null);
     return {
       ...it,
       isDemo: isDemoItem(it, defaultWallet),
@@ -278,11 +276,12 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       cost,
       pnl,
       pnlPct,
+      realizedPnlUsd,
       suggested: suggestedSell({ ...it, fmvUsd }),
       series30d: it.series30d ?? [],
       mover,
     };
-  }), [visibleItems, movers, defaultWallet]);
+  }), [visibleItems, movers, defaultWallet, sales]);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return enriched;
@@ -703,7 +702,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           {addMethod === 'csv' && <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsv(e.target.files?.[0])} />}
           <p className="small">{t(`inventory.${addMethod}AddHint`)}</p>{stageError && <p className="small" style={{ color: 'var(--clear)' }}>{stageError}</p>}
           <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
-          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.imageUrl ? <img src={r.imageUrl} alt="" loading="lazy" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(centsToUsd(r.priceUsdCents))}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
+          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.indexImageUrl ? <img src={r.indexImageUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(centsToUsd(r.priceUsdCents))}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
           <div className="modal-actions" style={{ marginTop: '.8rem' }}><button type="button" className="btn btn-ghost btn-sm" onClick={closeAddPanel}>{t('inventory.discard')}</button><button type="button" className="btn btn-primary" disabled={stageBusy || staged.length === 0} onClick={confirmStaged}>{t('inventory.confirmAdd', { count: staged.length })}</button></div>
         </section>
       )}
@@ -720,48 +719,65 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             </p>
           </div>
           <div className="inventory-toolbar">
-            <div className="filter-pills" role="tablist" aria-label="Filter holdings">
-              {FILTERS.map((f) => (
-                <button
-                  key={f.id}
-                  type="button"
-                  role="tab"
-                  aria-selected={filter === f.id}
-                  className={`filter-pill ${filter === f.id ? 'active' : ''}`}
-                  onClick={() => setFilter(f.id)}
-                >
-                  {f.label}
-                </button>
-              ))}
+            <div className="inventory-toolbar-group">
+              <span className="inventory-toolbar-label">{t('inventory.filter')}</span>
+              <div className="filter-pills" role="tablist" aria-label="Filter holdings">
+                {FILTERS.map((f) => (
+                  <button
+                    key={f.id}
+                    type="button"
+                    role="tab"
+                    aria-selected={filter === f.id}
+                    className={`filter-pill ${filter === f.id ? 'active' : ''}`}
+                    onClick={() => setFilter(f.id)}
+                  >
+                    {f.label}
+                  </button>
+                ))}
+              </div>
             </div>
-            <div className="inventory-controls" role="group" aria-label={t('inventory.sortAria')}>
-              <button
-                type="button"
-                className={`filter-pill ${sortKey === 'fmv' ? 'active' : ''}`}
-                aria-pressed={sortKey === 'fmv'}
-                onClick={() => setSortColumn('fmv')}
-              >
-                {t('inventory.sortFmv')}
-              </button>
-              <button
-                type="button"
-                className={`filter-pill ${sortKey === 'unrealized' ? 'active' : ''}`}
-                aria-pressed={sortKey === 'unrealized'}
-                onClick={() => setSortColumn('unrealized')}
-              >
-                {t('inventory.sortUnrealized')}
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost btn-sm inventory-icon-btn"
-                onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
-                title={sortDir === 'desc' ? t('inventory.sortDesc') : t('inventory.sortAsc')}
-                aria-label={sortDir === 'desc' ? t('inventory.sortDesc') : t('inventory.sortAsc')}
-              >
-                {sortDir === 'desc'
-                  ? <ArrowDownWideNarrow size={16} strokeWidth={1.75} />
-                  : <ArrowUpNarrowWide size={16} strokeWidth={1.75} />}
-              </button>
+            <div className="inventory-toolbar-group">
+              <span className="inventory-toolbar-label">Sorting</span>
+              <div className="inventory-controls" role="group" aria-label={t('inventory.sortAria')}>
+                <button
+                  type="button"
+                  className={`filter-pill ${sortKey === 'cost' ? 'active' : ''}`}
+                  aria-pressed={sortKey === 'cost'}
+                  onClick={() => setSortColumn('cost')}
+                >
+                  {t('inventory.statsCost')}
+                </button>
+                <button
+                  type="button"
+                  className={`filter-pill ${sortKey === 'fmv' ? 'active' : ''}`}
+                  aria-pressed={sortKey === 'fmv'}
+                  onClick={() => setSortColumn('fmv')}
+                >
+                  {t('inventory.sortFmv')}
+                </button>
+                <button
+                  type="button"
+                  className={`filter-pill ${sortKey === 'unrealized' ? 'active' : ''}`}
+                  aria-pressed={sortKey === 'unrealized'}
+                  onClick={() => setSortColumn('unrealized')}
+                >
+                  {t('inventory.sortUnrealized')}
+                </button>
+                <button
+                  type="button"
+                  className="btn btn-ghost btn-sm inventory-icon-btn"
+                  onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
+                  title={sortDir === 'desc' ? t('inventory.sortDesc') : t('inventory.sortAsc')}
+                  aria-label={sortDir === 'desc' ? t('inventory.sortDesc') : t('inventory.sortAsc')}
+                >
+                  {sortDir === 'desc'
+                    ? <ArrowDownWideNarrow size={16} strokeWidth={1.75} />
+                    : <ArrowUpNarrowWide size={16} strokeWidth={1.75} />}
+                </button>
+              </div>
+            </div>
+            <div className="inventory-toolbar-group">
+              <span className="inventory-toolbar-label">View</span>
               <div className="view-toggle" role="group" aria-label={t('inventory.viewAria')}>
                 <button
                   type="button"
@@ -785,7 +801,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 </button>
               </div>
             </div>
-            <div className="inventory-actions">
+            <div className="inventory-toolbar-group inventory-toolbar-group-actions">
+              <span className="inventory-toolbar-label">Manage</span>
+              <div className="inventory-actions">
                 {linkedWallet ? (
                   <button
                     type="button"
@@ -800,6 +818,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 <button type="button" className="btn btn-primary inventory-action-btn" onClick={() => setShowAddModal(true)}>
                   {t('inventory.addInventory')}
                 </button>
+              </div>
             </div>
           </div>
         </div>
@@ -815,7 +834,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {pageItems.map((it) => {
                   const cert = it.cert || it.id;
                   const decision = it.decision || 'hold';
-                  const imageUrl = it.indexImageUrl || it.imageUrl;
+                  const imageUrl = it.indexImageUrl;
                   return (
                     <button
                       key={cert}
@@ -826,16 +845,15 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                     >
                       <div className="inventory-tile-art">
                         {imageUrl ? (
-                          <img src={imageUrl} alt="" loading="lazy" />
+                          <img src={imageUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" />
                         ) : (
                           <div className="thumb-fallback inventory-tile-fallback">{t('common.card')}</div>
                         )}
-                        <DecisionBadge decision={decision} className="inventory-tile-badge" />
                       </div>
                       <div className="inventory-tile-body">
                         <strong className="inventory-tile-name">{it.name || cert}</strong>
                         <div className="small">
-                          {[it.grade, it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
+                          {[it.grade, t(`decision.${decision}`), it.setName || it.setCode].filter(Boolean).join(' · ') || cert}
                           {it.isDemo ? ` · ${t('inventory.sourceDemo')}` : ''}
                         </div>
                         <div className="inventory-tile-prices">
@@ -853,7 +871,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
               <div className="inventory-list" role="list">
                 <div className="inventory-list-head">
                   <span className="inventory-list-col-card">{t('inventory.yourInventory')}</span>
-                  <span className="inventory-list-col-num">{t('inventory.statsCost')}</span>
+                  <button
+                    type="button"
+                    className={`inventory-list-col-num inventory-sort-head ${sortKey === 'cost' ? 'active' : ''}`}
+                    onClick={() => setSortColumn('cost')}
+                  >
+                    {t('inventory.statsCost')}
+                    {sortKey === 'cost' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
+                  </button>
                   <button
                     type="button"
                     className={`inventory-list-col-num inventory-sort-head ${sortKey === 'fmv' ? 'active' : ''}`}
@@ -871,12 +896,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                     {sortKey === 'unrealized' ? (sortDir === 'desc' ? ' ↓' : ' ↑') : ''}
                   </button>
                   <span className="inventory-list-col-num inventory-list-col-alpha">{t('dashboard.strengthLabel')}</span>
-                  <span className="inventory-list-col-badge" />
                 </div>
                 {pageItems.map((it) => {
                   const cert = it.cert || it.id;
                   const decision = it.decision || 'hold';
-                  const imageUrl = it.indexImageUrl || it.imageUrl;
+                  const imageUrl = it.indexImageUrl;
                   return (
                     <button
                       key={cert}
@@ -888,7 +912,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                       <div className="inventory-row-card">
                         <div className="inventory-row-art">
                           {imageUrl ? (
-                            <img src={imageUrl} alt="" loading="lazy" />
+                            <img src={imageUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" />
                           ) : (
                             <div className="thumb-fallback inventory-row-fallback">{t('common.card')}</div>
                           )}
@@ -898,9 +922,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                           <span className="small inventory-row-sub">
                             {it.setName || it.setCode || cert}
                           </span>
-                          {(it.grade || it.isDemo) ? (
+                          {(it.grade || it.isDemo || decision) ? (
                             <span className="inventory-row-tags">
                               {it.grade ? <span className="chip inventory-row-grade">{it.grade}</span> : null}
+                              {decision ? <DecisionTag decision={decision} /> : null}
                               {it.isDemo ? <span className="chip inventory-row-demo">{t('inventory.sourceDemo')}</span> : null}
                             </span>
                           ) : null}
@@ -914,7 +939,6 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                       <span className="inventory-row-strength">
                         <StrengthBar alphaPct30d={it.alphaPct30d} />
                       </span>
-                      <DecisionBadge decision={decision} className="inventory-row-badge" />
                     </button>
                   );
                 })}

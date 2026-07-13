@@ -36,6 +36,9 @@ export async function fetchWallSummary() {
     : Array.isArray(tile.topMovers)
       ? tile.topMovers.slice(0, 10)
       : [];
+  const sparkline = Array.isArray(detail.sparkline) && detail.sparkline.length
+    ? detail.sparkline
+    : (Array.isArray(tile.sparkline) ? tile.sparkline : []);
 
   return {
     game: tile.game,
@@ -43,7 +46,7 @@ export async function fetchWallSummary() {
     value: tile.value,
     base: tile.base,
     deltas: tile.deltas ?? { d7: null, d30: null, d365: null },
-    sparkline: Array.isArray(tile.sparkline) ? tile.sparkline : [],
+    sparkline,
     topMovers: Array.isArray(tile.topMovers) ? tile.topMovers.slice(0, 10) : [],
     top10,
     constituents: Array.isArray(detail.constituents) ? detail.constituents : [],

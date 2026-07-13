@@ -7,7 +7,7 @@
  * are safe to call before any localization data ships (everything renders EN).
  *
  * @param {object} card  card object from an API response
- * @param {string} lng   active i18n language ('en' | 'ja' | 'zh-TW')
+ * @param {string} lng   active i18n language ('en' | 'ja' | 'zh-TW' | 'ko')
  */
 export function localizedCardName(card, lng) {
   if (!card) return '';

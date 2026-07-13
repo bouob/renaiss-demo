@@ -29,7 +29,7 @@ describe('extractJson', () => {
 
 describe('validateMerchantResponse', () => {
   it('accepts a complete three-locale payload', () => {
-    const parsed = { en: goodLocale, zh_TW: goodLocale, ja: goodLocale };
+    const parsed = { en: goodLocale, zh_TW: goodLocale, ja: goodLocale, ko: goodLocale };
     const v = validateMerchantResponse(parsed);
     assert.ok(v);
     assert.equal(v.en.verdict, goodLocale.verdict);
@@ -37,11 +37,12 @@ describe('validateMerchantResponse', () => {
   });
 
   it('accepts locale key aliases from model output', () => {
-    const parsed = { en: goodLocale, 'zh-TW': goodLocale, jp: goodLocale };
+    const parsed = { en: goodLocale, 'zh-TW': goodLocale, jp: goodLocale, korean: goodLocale };
     const v = validateMerchantResponse(parsed);
     assert.ok(v);
     assert.equal(v.zh_TW.verdict, goodLocale.verdict);
     assert.equal(v.ja.verdict, goodLocale.verdict);
+    assert.equal(v.ko.verdict, goodLocale.verdict);
   });
 
   it('normalizes rationale arrays and string caveats', () => {
@@ -53,6 +54,7 @@ describe('validateMerchantResponse', () => {
       },
       zh_TW: goodLocale,
       ja: goodLocale,
+      ko: goodLocale,
     };
     const v = validateMerchantResponse(parsed);
     assert.ok(v);
@@ -61,13 +63,13 @@ describe('validateMerchantResponse', () => {
   });
 
   it('rejects missing locales', () => {
-    assert.equal(validateMerchantResponse({ en: goodLocale, zh_TW: goodLocale }), null);
+    assert.equal(validateMerchantResponse({ en: goodLocale, zh_TW: goodLocale, ja: goodLocale }), null);
   });
 
   it('rejects empty verdict/rationale', () => {
     const bad = { ...goodLocale, verdict: '' };
     assert.equal(
-      validateMerchantResponse({ en: bad, zh_TW: goodLocale, ja: goodLocale }),
+      validateMerchantResponse({ en: bad, zh_TW: goodLocale, ja: goodLocale, ko: goodLocale }),
       null,
     );
   });

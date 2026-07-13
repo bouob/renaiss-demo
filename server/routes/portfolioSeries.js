@@ -67,7 +67,14 @@ export function createPortfolioSeriesRouter({
 
   router.get('/portfolio-series', requireAuth, async (req, res) => {
     const wallet = sanitizeWallet(req.query?.wallet);
-    const empty = { portfolio: [], index: null, perHolding: {}, coverage: { included: 0, total: 0 }, attributionUrl: ATTRIBUTION_URL };
+    const empty = {
+      portfolio: [],
+      index: null,
+      benchmark: { windows: {} },
+      perHolding: {},
+      coverage: { included: 0, total: 0 },
+      attributionUrl: ATTRIBUTION_URL,
+    };
     try {
       if (!wallet) return res.json(empty);
       const [holdings, summary] = await Promise.all([loadHoldings(req.uid, wallet), getSummary()]);

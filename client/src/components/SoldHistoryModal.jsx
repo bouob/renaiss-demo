@@ -19,7 +19,13 @@ function formatDate(iso, locale) {
 export default function SoldHistoryModal({ sales = [], summary = null, onClose }) {
   const { t, i18n } = useTranslation();
   const [page, setPage] = useState(1);
-  const dateLocale = i18n.language === 'ja' ? 'ja-JP' : i18n.language === 'zh-TW' ? 'zh-TW' : 'en-US';
+  const dateLocale = i18n.language === 'ja'
+    ? 'ja-JP'
+    : i18n.language === 'zh-TW'
+      ? 'zh-TW'
+      : i18n.language === 'ko'
+        ? 'ko-KR'
+        : 'en-US';
 
   const rows = useMemo(() => {
     // Prefer rows with proceeds first for merchant view, but show all
