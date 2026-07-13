@@ -104,6 +104,10 @@ export default function HoldingDetailModal({
       }
     })();
     return () => { cancelled = true; };
+    // Intentionally keyed on `cert` only: the form resets (and the RESET button's
+    // snapshot is captured) when you switch to a different card. Re-running on
+    // every `item` change would clobber a merchant's in-progress cost/notes edits
+    // whenever the parent re-renders with a refreshed item object.
   }, [cert]);
 
   useEffect(() => {
@@ -325,10 +329,11 @@ export default function HoldingDetailModal({
 
         <div className="modal-body modal-body-detail">
           <div className="modal-art">
-            {/* Inventory detail intentionally uses the index artwork only. */}
-            {item.indexImageUrl && !artBroken ? (
+            {/* Index art is preferred; rows saved before indexImageUrl existed
+                only carry the persisted chain image, so fall back to it. */}
+            {(item.indexImageUrl || item.imageUrl) && !artBroken ? (
               <img
-                src={item.indexImageUrl}
+                src={item.indexImageUrl || item.imageUrl}
                 alt=""
                 loading="lazy"
                 decoding="async"

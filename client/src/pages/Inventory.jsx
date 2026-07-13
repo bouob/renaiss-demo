@@ -237,7 +237,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     [items, linkedWallet, defaultWallet],
   );
 
-  const enriched = useMemo(() => visibleItems.map((it) => {
+  const enriched = useMemo(() => {
+    // Index sales by cert once so per-item realized-PnL lookup is O(1), not O(sales).
+    const saleByCert = new Map();
+    for (const sale of sales) {
+      const key = String(sale?.cert || '');
+      if (key && !saleByCert.has(key)) saleByCert.set(key, sale);
+    }
+    return visibleItems.map((it) => {
     const mover = movers.find((m) =>
       (it.name && m.name && String(it.name).toLowerCase() === String(m.name).toLowerCase())
       || (it.href && m.href && it.href === m.href),
@@ -260,7 +267,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const pnlPct = Number.isFinite(pnl) && Number.isFinite(cost) && cost !== 0
       ? (pnl / cost)
       : null;
-    const matchedSale = sales.find((sale) => String(sale?.cert || '') === String(it.cert || it.id || ''));
+    const matchedSale = saleByCert.get(String(it.cert || it.id || ''));
     const realizedPnlUsd = Number.isFinite(it.realizedPnlUsd)
       ? it.realizedPnlUsd
       : (Number.isFinite(matchedSale?.realizedPnlUsd) ? matchedSale.realizedPnlUsd : null);
@@ -281,7 +288,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       series30d: it.series30d ?? [],
       mover,
     };
-  }), [visibleItems, movers, defaultWallet, sales]);
+    });
+  }, [visibleItems, movers, defaultWallet, sales]);
 
   const filtered = useMemo(() => {
     if (filter === 'all') return enriched;
@@ -702,7 +710,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           {addMethod === 'csv' && <input type="file" accept=".csv,text/csv" onChange={(e) => loadCsv(e.target.files?.[0])} />}
           <p className="small">{t(`inventory.${addMethod}AddHint`)}</p>{stageError && <p className="small" style={{ color: 'var(--clear)' }}>{stageError}</p>}
           <p className="label" style={{ marginTop: '.8rem' }}>{t('inventory.staged', { count: staged.length })}</p>
-          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{r.indexImageUrl ? <img src={r.indexImageUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(centsToUsd(r.priceUsdCents))}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
+          {staged.length === 0 ? <div className="empty">{t('inventory.stagedEmpty')}</div> : <ul className="staged-list">{staged.map((r) => <li key={r.cert} className="staged-row">{(r.indexImageUrl || r.imageUrl) ? <img src={r.indexImageUrl || r.imageUrl} alt="" loading="lazy" decoding="async" fetchPriority="low" /> : <div className="thumb-fallback" />}<div className="staged-row-body"><strong>{r.name || r.cert}</strong><span className="small">{[r.grade, r.setName].filter(Boolean).join(' · ') || r.cert}</span><span className="small">{formatUsd(centsToUsd(r.priceUsdCents))}</span><span className="small muted">{provenanceLabel(r, t)}</span>{savedCerts.has(String(r.cert)) && <span className="chip">{t('inventory.stagedDupeInventory')}</span>}</div><button type="button" className="btn btn-ghost btn-sm" onClick={() => removeStaged(r.cert)}>{t('inventory.removeStaged')}</button></li>)}</ul>}
           <div className="modal-actions" style={{ marginTop: '.8rem' }}><button type="button" className="btn btn-ghost btn-sm" onClick={closeAddPanel}>{t('inventory.discard')}</button><button type="button" className="btn btn-primary" disabled={stageBusy || staged.length === 0} onClick={confirmStaged}>{t('inventory.confirmAdd', { count: staged.length })}</button></div>
         </section>
       )}
@@ -834,7 +842,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {pageItems.map((it) => {
                   const cert = it.cert || it.id;
                   const decision = it.decision || 'hold';
-                  const imageUrl = it.indexImageUrl;
+                  const imageUrl = it.indexImageUrl || it.imageUrl;
                   return (
                     <button
                       key={cert}
@@ -900,7 +908,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {pageItems.map((it) => {
                   const cert = it.cert || it.id;
                   const decision = it.decision || 'hold';
-                  const imageUrl = it.indexImageUrl;
+                  const imageUrl = it.indexImageUrl || it.imageUrl;
                   return (
                     <button
                       key={cert}
