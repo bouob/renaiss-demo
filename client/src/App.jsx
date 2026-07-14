@@ -27,9 +27,9 @@ export default function App() {
       return undefined;
     }
     return onAuthStateChanged(auth, (u) => {
-      setUser(u);
-      setAuthReady(true);
       if (u) {
+        setUser(u);
+        setAuthReady(true);
         setAuthError(null);
       } else if (shouldAttemptAnonSignIn({
         firebaseOk: isFirebaseConfigured,
@@ -37,11 +37,23 @@ export default function App() {
         attempted: anonAttemptedRef.current,
       })) {
         anonAttemptedRef.current = true;
+        // Keep authReady false while the anonymous sign-in is in flight so
+        // RequireAuth shows its lightweight loading placeholder instead of
+        // briefly flashing the sign-in gate before the demo user resolves.
         signInAnonymouslyUser().catch((err) => {
           // Provider disabled or offline → stay signed out, fall back to the
           // existing sign-in gate. Never retry (latch above) to avoid loops.
           console.warn('[demo] anonymous sign-in failed:', err?.message ?? err);
+          setUser(null);
+          setAuthReady(true);
         });
+      } else {
+        // Not attempting anon sign-in: Firebase not configured, or already
+        // attempted (e.g. after an explicit sign-out, the visitor sees the
+        // normal signed-out gate until reload — the latch intentionally does
+        // not re-arm).
+        setUser(u);
+        setAuthReady(true);
       }
     });
   }, []);
