@@ -163,6 +163,9 @@ describe('getAdjacentCertSuggestions', () => {
     const first = await getAdjacentCertSuggestions(CERT);
     assert.equal(first.neighbors.length, 1, 'fail-open: still returns the healthy neighbor');
     assert.equal(first.neighbors[0].delta, 1);
+    // A null brief shortens the list for the same reason a tRPC blip empties it:
+    // upstream fell over. `degraded` covers BOTH upstreams, not just marketplace.
+    assert.equal(first.degraded, true);
     assert.equal(__cacheSizeForTest(), 0, 'a transient failure must not be cached');
 
     const afterFirst = calls();
@@ -182,16 +185,31 @@ describe('getAdjacentCertSuggestions', () => {
       { marketplace: (cert) => fakeResponse(cert === BELOW ? marketplaceBody(cert) : MARKETPLACE_EMPTY) },
     );
 
-    const { neighbors, marketplaceDegraded } = await getAdjacentCertSuggestions(CERT);
+    const { neighbors, degraded } = await getAdjacentCertSuggestions(CERT);
     assert.equal(neighbors.length, 1);
     assert.equal(neighbors[0].cert, BELOW);
     assert.equal(neighbors[0].delta, -1);
     assert.equal(neighbors[0].tokenId, tokenIdFor(BELOW));
-    assert.equal(marketplaceDegraded, false, 'an unlisted cert is a real answer, not a failure');
+    assert.equal(degraded, false, 'an unlisted cert is a real answer, not a failure');
     assert.equal(__cacheSizeForTest(), 1, 'a definitive answer is cacheable');
   });
 
-  it('reports marketplaceDegraded (not "no neighbors") when the enrich failed transiently', async () => {
+  it('reports degraded when EVERY Index brief failed, so the empty list is not read as "none listed"', async () => {
+    // The sibling of the marketplace case: if the Index itself is down, the
+    // marketplace enrich never even runs (no found neighbors to enrich), and the
+    // list is empty for a reason the merchant can retry away.
+    stubFetchByCert({
+      [BELOW]: () => fakeResponse(null, { status: 500 }),
+      [ABOVE]: () => fakeResponse(null, { status: 500 }),
+    });
+
+    const { neighbors, degraded } = await getAdjacentCertSuggestions(CERT);
+    assert.deepEqual(neighbors, []);
+    assert.equal(degraded, true);
+    assert.equal(__cacheSizeForTest(), 0);
+  });
+
+  it('reports degraded (not "no neighbors") when the enrich failed transiently', async () => {
     // A tRPC 5xx leaves every neighbor without a tokenId, so the filtered list
     // is empty — but that is a lookup failure, not "this market has no adjacent
     // cards". The flag lets the client say so, and the result is never cached.
@@ -205,7 +223,7 @@ describe('getAdjacentCertSuggestions', () => {
 
     const first = await getAdjacentCertSuggestions(CERT);
     assert.deepEqual(first.neighbors, []);
-    assert.equal(first.marketplaceDegraded, true);
+    assert.equal(first.degraded, true);
     assert.equal(__cacheSizeForTest(), 0, 'a transient marketplace failure must not be cached');
 
     const afterFirst = calls();

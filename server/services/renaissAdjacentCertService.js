@@ -72,7 +72,7 @@ export const MAX_CACHE_ENTRIES = 5000;
 let maxCacheEntries = MAX_CACHE_ENTRIES;
 
 function emptyShape() {
-  return { neighbors: [], attributionUrl: ATTRIBUTION_URL, marketplaceDegraded: false };
+  return { neighbors: [], attributionUrl: ATTRIBUTION_URL, degraded: false };
 }
 
 function isFresh(entry) {
@@ -100,13 +100,14 @@ function writeCache(cert, result) {
  *     tokenId: string, renaissItemId: string|null,
  *     psaPop: null }>,
  *   attributionUrl: string,
- *   marketplaceDegraded: boolean,
+ *   degraded: boolean,
  * }>} `neighbors` holds only certs the Index knows AND the marketplace lists
  *   (hence `tokenId` is always present — every row opens on renaiss.xyz).
- *   `marketplaceDegraded` marks an empty/short list caused by a tRPC failure
- *   rather than by the market genuinely not carrying the neighbor.
- *   Fail-open on any failure mode, an unparseable cert, or zero found
- *   neighbors. Never throws.
+ *   `degraded` marks a short/empty list caused by a transient upstream failure
+ *   (Index brief OR marketplace tRPC) rather than by the market genuinely not
+ *   carrying the neighbor — the caller MUST forward it, or the UI reports an
+ *   outage as "nothing listed". Fail-open on any failure mode, an unparseable
+ *   cert, or zero found neighbors. Never throws.
  */
 export async function getAdjacentCertSuggestions(cert) {
   try {
@@ -173,26 +174,19 @@ export async function getAdjacentCertSuggestions(cert) {
       })
       .filter((n) => n.tokenId);
 
-    // `marketplaceDegraded` is how the client tells "this market has no adjacent
-    // cards" (a real answer) apart from "the marketplace lookup fell over"
-    // (which zeroes the list for the wrong reason, and is retryable).
-    const result = {
-      neighbors,
-      attributionUrl: ATTRIBUTION_URL,
-      marketplaceDegraded: marketTransient,
-    };
+    // One transient signal for BOTH upstreams: a null brief (Index breaker /
+    // quota / timeout / 5xx) and a tRPC failure shorten the list for the same
+    // reason — something fell over. `degraded` is how the client tells that
+    // apart from "this market genuinely has no adjacent cards", and it is the
+    // same condition that forbids caching (both-success-only, mirroring the
+    // Renaiss index invariant): a blip must never freeze this cert for 6h.
+    const degraded = briefs.some((brief) => brief == null) || marketTransient;
 
-    // Both-success-only write (mirrors the Renaiss index invariant): a null
-    // brief is a *transient* upstream failure (open breaker / exhausted
-    // quota / timeout / 5xx), not a healthy `{ found: false }` negative; the
-    // marketplace enrich contributes its own transient flag the same way.
-    // Only freeze the result for the full TTL when every part got a
-    // definitive answer — otherwise a breaker/timeout blip would poison this
-    // cert for 6h. The partial/empty result is still returned now
-    // (fail-open), just not cached, so the next call re-queries once
-    // upstream recovers.
-    const anyTransient = briefs.some((brief) => brief == null) || marketTransient;
-    if (!anyTransient) writeCache(cert, result);
+    const result = { neighbors, attributionUrl: ATTRIBUTION_URL, degraded };
+
+    // The partial/empty result is still returned now (fail-open), just not
+    // cached, so the next call re-queries once upstream recovers.
+    if (!degraded) writeCache(cert, result);
     return result;
   } catch (err) {
     console.warn(`[renaissAdjacentCertService] getAdjacentCertSuggestions(${cert}) errored: ${err.message}`);

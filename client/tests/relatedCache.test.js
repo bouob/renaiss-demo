@@ -5,6 +5,7 @@ import {
   setCachedRelated,
   clearRelatedCache,
   RELATED_CACHE_TTL_MS,
+  __resetForTest,
   __setMaxEntriesForTest,
   __cacheSizeForTest,
 } from '../src/lib/relatedCache.js';
@@ -13,8 +14,18 @@ const realNow = Date.now;
 const OK = { gated: false, reason: null, neighbors: [{ cert: 'PSA1', delta: -1, tokenId: '1234567890123456' }] };
 
 describe('relatedCache', () => {
-  beforeEach(() => clearRelatedCache());
+  beforeEach(() => __resetForTest());
   afterEach(() => { Date.now = realNow; });
+
+  it('clearRelatedCache drops every memo (this is what sign-out calls)', () => {
+    // Without it, the next account signing in on this tab is served the previous
+    // account's ownership-gated neighbors — the gate never runs, because no
+    // request is made.
+    setCachedRelated('PSA104644163', OK);
+    clearRelatedCache();
+    assert.equal(getCachedRelated('PSA104644163'), null);
+    assert.equal(__cacheSizeForTest(), 0);
+  });
 
   it('serves a stored result back within the TTL', () => {
     setCachedRelated('PSA104644163', OK);
@@ -39,7 +50,7 @@ describe('relatedCache', () => {
       { gated: true, reason: 'not_held', neighbors: [] },
       { gated: true, neighbors: [] },
       { gated: false, reason: 'error', neighbors: [] },
-      { gated: false, reason: null, neighbors: [], marketplaceDegraded: true },
+      { gated: false, reason: null, neighbors: [], degraded: true },
       null,
     ];
     for (const bad of failures) {
@@ -51,7 +62,7 @@ describe('relatedCache', () => {
   it('caches a genuinely empty (ungated, healthy) result', () => {
     // "This market has no adjacent cards" is a real answer — re-asking costs an
     // upstream call for the same null.
-    const empty = { gated: false, reason: null, neighbors: [], marketplaceDegraded: false };
+    const empty = { gated: false, reason: null, neighbors: [], degraded: false };
     setCachedRelated('PSA84735372', empty);
     assert.deepEqual(getCachedRelated('PSA84735372'), empty);
   });

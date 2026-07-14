@@ -37,18 +37,18 @@ describe('adjacentNotice', () => {
   });
 
   it('blames the marketplace lookup, not the card, when the enrich degraded', () => {
-    // An empty list with marketplaceDegraded set means the tRPC enrich failed,
+    // An empty list with degraded set means the tRPC enrich failed,
     // so every neighbor lost its tokenId and got filtered out. Saying "this
     // market has no adjacent cards" would be a lie the user cannot act on.
-    const notice = adjacentNotice({ gated: false, reason: null, neighbors: [], marketplaceDegraded: true });
+    const notice = adjacentNotice({ gated: false, reason: null, neighbors: [], degraded: true });
     assert.deepEqual(notice, { key: 'detail.adjacentFailed', retryable: true });
   });
 
-  it('ignores marketplaceDegraded once at least one neighbor survived', () => {
+  it('ignores degraded once at least one neighbor survived', () => {
     const notice = adjacentNotice({
       gated: false,
       reason: null,
-      marketplaceDegraded: true,
+      degraded: true,
       neighbors: [{ cert: 'PSA1', delta: -1 }],
     });
     assert.equal(notice, null, 'a partial list is still worth rendering');

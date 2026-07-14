@@ -56,21 +56,32 @@ export function setCachedRelated(cert, data) {
   cache.set(key, { data, at: Date.now() });
 }
 
+/**
+ * Drops every memo. MUST be called on sign-out: GET /related/:cert is
+ * ownership-gated per uid, so a result cached for one account would otherwise be
+ * served straight from memory to the next account signing in on the same tab —
+ * the gate never runs, because no request is made.
+ */
 export function clearRelatedCache() {
   cache.clear();
-  maxEntries = MAX_RELATED_CACHE;
 }
 
 function isCacheable(data) {
   if (!data || typeof data !== 'object') return false;
   if (data.gated || data.reason) return false;
-  if (data.marketplaceDegraded) return false;
+  if (data.degraded) return false;
   return Array.isArray(data.neighbors);
 }
 
 function normalizeKey(cert) {
   const s = typeof cert === 'string' ? cert.trim().toUpperCase() : '';
   return s || null;
+}
+
+/** Test-only: clears the memo AND restores the entry cap. */
+export function __resetForTest() {
+  cache.clear();
+  maxEntries = MAX_RELATED_CACHE;
 }
 
 /** Test-only: shrink the cap so eviction is exercisable without 200 inserts. */

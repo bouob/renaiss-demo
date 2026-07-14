@@ -44,6 +44,7 @@ router.get('/related/:cert', relatedLimiter, optionalAuth, async (req, res) => {
     neighbors: [],
     attributionUrl: ATTRIBUTION_URL,
     gated: true,
+    degraded: false,
   };
 
   try {
@@ -75,6 +76,10 @@ router.get('/related/:cert', relatedLimiter, optionalAuth, async (req, res) => {
       card: card?.found ? card : null,
       neighbors: suggestions?.neighbors ?? [],
       attributionUrl: suggestions?.attributionUrl ?? ATTRIBUTION_URL,
+      // MUST forward: without it an outage renders as "no adjacent cards on this
+      // market" — an answer the merchant cannot act on. The list is empty either
+      // way; only this flag says which kind of empty it is.
+      degraded: Boolean(suggestions?.degraded),
       gated: false,
       reason: null,
     });
