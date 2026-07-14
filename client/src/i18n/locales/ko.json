@@ -1,9 +1,16 @@
 {
   "demo": {
     "bannerTitle": "데모 계정으로 둘러보는 중입니다",
-    "bannerSubtitle": "카드를 자유롭게 추가·편집·삭제해 보세요(저장되지 않습니다). 나만의 재고를 만들려면 Google로 로그인하세요.",
+    "bannerSubtitle": "카드를 자유롭게 추가·편집·삭제해 보세요. 이 데모 내용은 이어지지 않습니다. 나만의 재고를 만들려면 Google로 로그인하세요.",
     "signIn": "Google로 로그인",
-    "dismiss": "닫기"
+    "dismiss": "닫기",
+    "signInModal": {
+      "title": "Google로 로그인",
+      "body": "이제 Google로 로그인합니다. 데모 내용은 이어지지 않으며, 로그인하면 이 데모 계정과 데이터가 삭제됩니다.",
+      "confirm": "계속",
+      "cancel": "취소",
+      "working": "로그인 중…"
+    }
   },
   "lang": {
     "en": "EN",

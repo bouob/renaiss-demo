@@ -1,9 +1,16 @@
 {
   "demo": {
     "bannerTitle": "You're exploring with a demo account",
-    "bannerSubtitle": "Add, edit, and delete cards freely — nothing here is saved. Sign in with Google to build your own inventory.",
+    "bannerSubtitle": "Add, edit, and delete cards freely to explore — this demo won't carry over. Sign in with Google to start your own inventory.",
     "signIn": "Sign in with Google",
-    "dismiss": "Dismiss"
+    "dismiss": "Dismiss",
+    "signInModal": {
+      "title": "Sign in with Google",
+      "body": "You're about to sign in with Google. Your demo cards won't carry over — this demo account and its data will be cleared once you sign in.",
+      "confirm": "Continue",
+      "cancel": "Cancel",
+      "working": "Signing in…"
+    }
   },
   "lang": {
     "en": "EN",

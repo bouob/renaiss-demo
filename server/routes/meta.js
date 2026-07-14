@@ -6,8 +6,9 @@
 
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
-import { adminDb } from '../services/firebaseAdmin.js';
+import { adminDb, adminAuth } from '../services/firebaseAdmin.js';
 import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
+import { discardDemoData, checkDiscardEligibility } from '../services/demoCleanup.js';
 import {
   ensureDefaultPortfolio,
   syntheticWallet,
@@ -142,6 +143,61 @@ router.post('/meta/bulk', requireAuth, async (req, res) => {
   } catch (err) {
     console.warn(`[meta:bulk] ${err?.message ?? err}`);
     return res.status(500).json({ error: 'meta_bulk_failed', accepted: 0, rejected: [] });
+  }
+});
+
+/**
+ * POST /meta/discard-demo — tear down an abandoned anonymous demo account.
+ *
+ * Called after a demo visitor upgrades to Google: the request is authenticated
+ * as the new real user (requireAuth), and the anonymous ID token — captured
+ * client-side before the switch — is passed in the body to prove ownership of
+ * the account being deleted. Nothing is migrated; the demo data is disposable.
+ * Idempotent/retry-safe, so the client may re-send on a prior failure.
+ */
+router.post('/meta/discard-demo', requireAuth, async (req, res) => {
+  try {
+    if (!adminDb || !adminAuth) {
+      return res.status(503).json({ error: 'store_unavailable' });
+    }
+    const anonToken = typeof req.body?.anonToken === 'string' ? req.body.anonToken : '';
+    if (!anonToken) {
+      return res.status(400).json({ error: 'missing_anon_token' });
+    }
+
+    let decoded;
+    try {
+      decoded = await adminAuth.verifyIdToken(anonToken);
+    } catch {
+      return res.status(400).json({ error: 'invalid_anon_token' });
+    }
+
+    // Only an anonymous session may be discarded, and never the caller's own
+    // (real) account — guards against a token mix-up wiping live data.
+    const eligibility = checkDiscardEligibility(decoded, req.uid);
+    if (!eligibility.ok) {
+      return res.status(eligibility.status).json({ error: eligibility.error });
+    }
+    const { anonUid } = eligibility;
+
+    const { deleted } = await discardDemoData(anonUid);
+
+    // Best-effort auth-account removal. Already-deleted is success (idempotent);
+    // any other failure leaves an empty auth stub the client can retry against.
+    let userDeleted = true;
+    try {
+      await adminAuth.deleteUser(anonUid);
+    } catch (err) {
+      if (err?.code !== 'auth/user-not-found') {
+        userDeleted = false;
+        console.warn(`[meta:discard-demo] deleteUser ${anonUid}: ${err?.message ?? err}`);
+      }
+    }
+
+    return res.json({ ok: true, deleted, userDeleted });
+  } catch (err) {
+    console.warn(`[meta:discard-demo] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'discard_failed' });
   }
 });
 

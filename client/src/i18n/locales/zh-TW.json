@@ -1,9 +1,16 @@
 {
   "demo": {
     "bannerTitle": "您正在使用示範帳戶瀏覽",
-    "bannerSubtitle": "可自由新增、編輯與刪除卡片（不會儲存）。登入 Google 以建立您自己的庫存。",
+    "bannerSubtitle": "可自由新增、編輯與刪除卡片試用，此示範內容不會保留。登入 Google 以建立您自己的庫存。",
     "signIn": "使用 Google 登入",
-    "dismiss": "關閉"
+    "dismiss": "關閉",
+    "signInModal": {
+      "title": "使用 Google 登入",
+      "body": "您即將使用 Google 登入。示範內容不會保留，登入後此示範帳戶與其資料將被清除。",
+      "confirm": "繼續",
+      "cancel": "取消",
+      "working": "登入中…"
+    }
   },
   "lang": {
     "en": "EN",
