@@ -72,7 +72,7 @@ export const MAX_CACHE_ENTRIES = 5000;
 let maxCacheEntries = MAX_CACHE_ENTRIES;
 
 function emptyShape() {
-  return { neighbors: [], attributionUrl: ATTRIBUTION_URL };
+  return { neighbors: [], attributionUrl: ATTRIBUTION_URL, marketplaceDegraded: false };
 }
 
 function isFresh(entry) {
@@ -97,11 +97,16 @@ function writeCache(cert, result) {
  *     name: string|null, setName: string|null, cardNumber: string|null,
  *     gradeLabel: string|null, priceUsdCents: number|null, confidence: string|null,
  *     imageUrl: string|null, imageUrlThumb: string|null, href: string|null,
- *     tokenId: string|null, renaissItemId: string|null,
+ *     tokenId: string, renaissItemId: string|null,
  *     psaPop: null }>,
  *   attributionUrl: string,
- * }>} fail-open — `{ neighbors: [], attributionUrl }` on any failure mode,
- *   an unparseable cert, or zero found neighbors. Never throws.
+ *   marketplaceDegraded: boolean,
+ * }>} `neighbors` holds only certs the Index knows AND the marketplace lists
+ *   (hence `tokenId` is always present — every row opens on renaiss.xyz).
+ *   `marketplaceDegraded` marks an empty/short list caused by a tRPC failure
+ *   rather than by the market genuinely not carrying the neighbor.
+ *   Fail-open on any failure mode, an unparseable cert, or zero found
+ *   neighbors. Never throws.
  */
 export async function getAdjacentCertSuggestions(cert) {
   try {
@@ -151,18 +156,31 @@ export async function getAdjacentCertSuggestions(cert) {
       }
     }
 
-    const neighbors = foundNeighbors.map((n) => {
-      const m = marketByCert.get(String(n.cert).toUpperCase())
-        || marketByCert.get(n.cert)
-        || null;
-      return {
-        ...n,
-        tokenId: m?.tokenId ?? null,
-        renaissItemId: m?.renaissItemId ?? null,
-      };
-    });
+    // Only neighbors the marketplace can actually open survive. A cert the
+    // Index knows but renaiss.xyz does not list is dropped entirely — showing it
+    // would either dangle a dead row or push the merchant at the Index pricing
+    // page, which is not a buy surface.
+    const neighbors = foundNeighbors
+      .map((n) => {
+        const m = marketByCert.get(String(n.cert).toUpperCase())
+          || marketByCert.get(n.cert)
+          || null;
+        return {
+          ...n,
+          tokenId: m?.tokenId ?? null,
+          renaissItemId: m?.renaissItemId ?? null,
+        };
+      })
+      .filter((n) => n.tokenId);
 
-    const result = { neighbors, attributionUrl: ATTRIBUTION_URL };
+    // `marketplaceDegraded` is how the client tells "this market has no adjacent
+    // cards" (a real answer) apart from "the marketplace lookup fell over"
+    // (which zeroes the list for the wrong reason, and is retryable).
+    const result = {
+      neighbors,
+      attributionUrl: ATTRIBUTION_URL,
+      marketplaceDegraded: marketTransient,
+    };
 
     // Both-success-only write (mirrors the Renaiss index invariant): a null
     // brief is a *transient* upstream failure (open breaker / exhausted

@@ -4,8 +4,8 @@ import InteractiveTrendChart from './InteractiveTrendChart.jsx';
 import StrengthBar from './StrengthBar.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
-import { resolveIndexUrl } from '../lib/renaissIndexUrl.js';
 import { resolveMarketplaceUrl } from '../lib/renaissMarketplaceUrl.js';
+import { getCachedRelated, setCachedRelated } from '../lib/relatedCache.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
 import { adjacentNotice } from '../lib/adjacent.js';
@@ -81,7 +81,9 @@ export default function HoldingDetailModal({
     setTab('inventory');
     setSeries(Array.isArray(item.series30d) ? item.series30d : []);
     setReturnPct(item.returnPct30d ?? null);
-    setRelated(null);
+    // Reopening a card looked at minutes ago skips both the "load" click and the
+    // round trip. Failures are never cached, so a retryable state stays retryable.
+    setRelated(getCachedRelated(cert));
     setBrokenThumbs(new Set());
     setAi(null);
     setAiError(null);
@@ -139,6 +141,9 @@ export default function HoldingDetailModal({
       const token = user ? await getToken() : null;
       const res = await fetchRelated(cert, { authToken: token });
       setRelated(res);
+      // Only successful payloads land in the cache (relatedCache drops the rest),
+      // so Retry after a failure always re-queries.
+      setCachedRelated(cert, res);
     } catch (err) {
       setRelated({
         cert,
@@ -240,12 +245,12 @@ export default function HoldingDetailModal({
   const marketUrl = resolveMarketplaceUrl({ tokenId: item.tokenId });
 
   function renderNeighbor(n) {
-    // Marketplace deep link only when the server resolved a tokenId — no
-    // tokenId means the card is not on the marketplace, and a ?q={cert} search
-    // there lands on an empty page. Fall back to the Index pricing page.
-    const market = resolveMarketplaceUrl({ tokenId: n.tokenId });
-    const indexFallback = resolveIndexUrl(n.href);
-    const url = market || indexFallback;
+    // The list only carries certs the marketplace lists, so ↗ means exactly one
+    // thing: this card opens on renaiss.xyz. No Index pricing-page fallback —
+    // that is not a buy surface, and sending the merchant there implies the card
+    // is purchasable when it is not. The unlinked branch below is a guard, not a
+    // path the server should produce.
+    const url = resolveMarketplaceUrl({ tokenId: n.tokenId });
     const thumb = n.imageUrlThumb || n.imageUrl;
     const name = n.name ?? t('common.card');
     const meta = [n.gradeLabel, n.setName, n.cardNumber].filter(Boolean).join(' · ')

@@ -34,15 +34,30 @@ function countUpstreamCalls() {
   let calls = 0;
   globalThis.fetch = async (url, ...rest) => {
     const u = String(url);
-    // Marketplace tRPC enrich is best-effort; stub it so CI never depends on
-    // renaiss.xyz availability (and so this suite stays under a second).
+    // Marketplace tRPC enrich; stub it so CI never depends on renaiss.xyz
+    // availability. It must return an exact Serial match: the service only keeps
+    // neighbors the marketplace lists, so an empty collection would filter every
+    // neighbor away and this suite would assert on the wrong thing.
     if (u.includes('renaiss.xyz') || u.includes('collectible.list')) {
+      const queried = decodeURIComponent(u).match(/PSA\d+/)?.[0] ?? '';
       return {
         status: 200,
         ok: true,
         headers: { get: () => null },
         async json() {
-          return [{ result: { data: { json: { collection: [] } } } }];
+          return [{
+            result: {
+              data: {
+                json: {
+                  collection: queried ? [{
+                    tokenId: queried.replace(/\D/g, '').padEnd(20, '0'),
+                    itemId: `${queried.toLowerCase()}-0000-4000-8000-000000000000`,
+                    attributes: [{ trait: 'Serial', value: queried }],
+                  }] : [],
+                },
+              },
+            },
+          }];
         },
       };
     }
