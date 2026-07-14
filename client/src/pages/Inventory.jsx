@@ -18,6 +18,8 @@ import {
   fetchSales,
   bulkSales,
   unlinkWallet,
+  deleteMeta,
+  clearDemoInventory,
 } from '../lib/inventoryApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import {
@@ -111,6 +113,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [defaultWallet, setDefaultWallet] = useState(null);
   const [linkedWallet, setLinkedWallet] = useState(() => readLastWallet());
   const [unlinkBusy, setUnlinkBusy] = useState(false);
+  const [clearBusy, setClearBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -356,6 +359,46 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setError(err?.message ?? t('inventory.unlinkFailed'));
     } finally {
       setUnlinkBusy(false);
+    }
+  }
+
+  const demoCount = useMemo(() => enriched.filter((it) => it.isDemo).length, [enriched]);
+
+  async function handleClearDemo() {
+    if (!user || demoCount === 0) return;
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(t('inventory.clearDemoConfirm', { count: demoCount }))
+      : true;
+    if (!ok) return;
+    setClearBusy(true);
+    setError(null);
+    try {
+      await withAuth((token) => clearDemoInventory({ authToken: token }));
+      setCsvNote(t('inventory.clearDemoOk'));
+      await loadInventory();
+    } catch (err) {
+      setError(err?.message ?? t('inventory.clearDemoFailed'));
+    } finally {
+      setClearBusy(false);
+    }
+  }
+
+  async function handleDeleteHolding(cert) {
+    if (!cert) return;
+    const ok = typeof window !== 'undefined'
+      ? window.confirm(t('detail.deleteConfirm'))
+      : true;
+    if (!ok) return;
+    setError(null);
+    try {
+      if (user) {
+        await withAuth((token) => deleteMeta(cert, { authToken: token }));
+      }
+      setItems((prev) => prev.filter((i) => (i.cert || i.id) !== cert));
+      setSelectedCert(null);
+      setCsvNote(t('inventory.deleteOk'));
+    } catch (err) {
+      setError(err?.message ?? t('inventory.deleteFailed'));
     }
   }
 
@@ -812,6 +855,17 @@ export default function Inventory({ user, getToken, firebaseOk }) {
             <div className="inventory-toolbar-group inventory-toolbar-group-actions">
               <span className="inventory-toolbar-label">Manage</span>
               <div className="inventory-actions">
+                {user && demoCount > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost inventory-action-btn"
+                    disabled={clearBusy}
+                    onClick={handleClearDemo}
+                    title={t('inventory.clearDemoHint')}
+                  >
+                    {clearBusy ? t('inventory.clearingDemo') : t('inventory.clearDemo')}
+                  </button>
+                ) : null}
                 {linkedWallet ? (
                   <button
                     type="button"
@@ -991,6 +1045,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           onSaveCost={saveCost}
           onSaveDetails={saveDetailsGuarded}
           onUpdateStatus={updateStatus}
+          onDelete={handleDeleteHolding}
         />
       )}
 

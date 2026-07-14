@@ -129,3 +129,7 @@ export function postJson(path, body, options = {}) {
 export function putJson(path, body, options = {}) {
   return requestJson(path, { ...options, method: 'PUT', body: JSON.stringify(body ?? {}) });
 }
+
+export function delJson(path, options = {}) {
+  return requestJson(path, { ...options, method: 'DELETE' });
+}

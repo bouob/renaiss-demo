@@ -201,3 +201,37 @@ export async function unlinkWalletInventory(uid, wallet, db = adminDb) {
   if (removed > 0 || restored > 0) await batch.commit();
   return { wallet: w, removed, restored };
 }
+
+/**
+ * Delete every inventory row tagged with the account's synthetic demo wallet.
+ *
+ * Unlike {@link unlinkWalletInventory}, this does NOT restore seeds and does NOT
+ * touch the parent seed markers — the account stays "seeded" so the deleted demo
+ * cards do not reappear on the next GET /meta (the seeder preserves delete-safety
+ * once seededDefaultExpansionVersion is current). Personal / manually-added rows
+ * and sales history are left untouched.
+ *
+ * @param {string} uid
+ * @param {FirebaseFirestore.Firestore} [db]
+ * @returns {Promise<{ wallet: string|null, removed: number }>}
+ */
+export async function clearDemoInventory(uid, db = adminDb) {
+  if (!db || !uid) return { wallet: null, removed: 0 };
+  const demoWallet = syntheticWallet(uid);
+  const itemsCol = db.collection(COLLECTION).doc(uid).collection('items');
+  const snap = await itemsCol.get();
+
+  const batch = db.batch();
+  let removed = 0;
+  for (const doc of snap.docs) {
+    const data = doc.data() || {};
+    const rowW = typeof data.wallet === 'string' ? data.wallet.toLowerCase() : '';
+    if (rowW === demoWallet) {
+      batch.delete(doc.ref);
+      removed += 1;
+    }
+  }
+
+  if (removed > 0) await batch.commit();
+  return { wallet: demoWallet, removed };
+}
