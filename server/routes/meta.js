@@ -7,7 +7,7 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
-import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
+import { rememberHeldCert, rememberHeldCerts, forgetHeldCert } from '../services/heldCertGate.js';
 import {
   ensureDefaultPortfolio,
   syntheticWallet,
@@ -202,6 +202,9 @@ router.delete('/meta/:cert', requireAuth, async (req, res) => {
     const existing = await ref.get();
     const removed = existing.exists ? 1 : 0;
     if (removed) await ref.delete();
+    // Drop the /related quota allowance for a cert the user no longer holds,
+    // mirroring how PUT/GET remember held certs.
+    forgetHeldCert(cert);
     return res.json({ ok: true, removed });
   } catch (err) {
     console.warn(`[meta:delete] ${err?.message ?? err}`);

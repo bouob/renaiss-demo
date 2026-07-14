@@ -384,16 +384,17 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   }
 
   async function handleDeleteHolding(cert) {
-    if (!cert) return;
+    // Inventory is only populated for a signed-in user (loadInventory clears it
+    // otherwise), so this handler is never reachable while signed out — the
+    // server delete is unconditional.
+    if (!cert || !user) return;
     const ok = typeof window !== 'undefined'
       ? window.confirm(t('detail.deleteConfirm'))
       : true;
     if (!ok) return;
     setError(null);
     try {
-      if (user) {
-        await withAuth((token) => deleteMeta(cert, { authToken: token }));
-      }
+      await withAuth((token) => deleteMeta(cert, { authToken: token }));
       setItems((prev) => prev.filter((i) => (i.cert || i.id) !== cert));
       setSelectedCert(null);
       setCsvNote(t('inventory.deleteOk'));

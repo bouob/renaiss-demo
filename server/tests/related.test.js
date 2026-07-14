@@ -10,6 +10,7 @@ process.env.RENAISS_INDEX_API_SECRET = 'test-secret';
 const relatedRouter = (await import('../routes/related.js')).default;
 const {
   rememberHeldCert,
+  forgetHeldCert,
   __resetHeldCertGateForTest,
 } = await import('../services/heldCertGate.js');
 const {
@@ -114,6 +115,20 @@ describe('GET /related/:cert', () => {
     assert.ok(calls() > 0, 'a held cert should reach upstream');
     assert.equal(body.neighbors.length, 2);
     assert.deepEqual(body.neighbors.map((n) => n.delta), [-1, 1]);
+  });
+
+  it('re-gates a cert once it is forgotten (e.g. the holding was deleted)', async () => {
+    // DELETE /meta/:cert calls forgetHeldCert so a removed card can no longer
+    // spend the shared Renaiss quota via /related.
+    rememberHeldCert(CERT);
+    forgetHeldCert(CERT);
+    const calls = countUpstreamCalls();
+    const { status, body } = await get(`/related/${CERT}`);
+
+    assert.equal(calls(), 0);
+    assert.equal(status, 200);
+    assert.equal(body.gated, true);
+    assert.equal(body.reason, 'not_held');
   });
 
   it('rejects a malformed cert without touching upstream', async () => {
