@@ -43,6 +43,18 @@ describe('inventoryItem shared module', () => {
     }
   });
 
+  it('sanitizeItem keeps a valid decimal tokenId and drops junk', () => {
+    // tokenId is the renaiss.xyz /card/{tokenId} deep-link key: a large decimal
+    // uint256 string. A malformed value must be dropped, never persisted — the
+    // client refuses to build a URL off it, so storing junk only masks the miss.
+    const tokenId = '39468560625473669737299487652232890385753731921834312021449811470109026056283';
+    assert.equal(sanitizeItem({ tokenId }, 'PSA114662766').tokenId, tokenId);
+    for (const value of ['abc', '12345', '0xdeadbeefdead', '', null, undefined, 42]) {
+      const patch = sanitizeItem({ tokenId: value }, 'PSA114662766');
+      assert.ok(!('tokenId' in patch), `tokenId should be dropped for ${JSON.stringify(value)}`);
+    }
+  });
+
   it('selectInventoryItems returns all rows when no wallet filter', () => {
     const rows = [{ cert: 'A', wallet: '0xaaa' }, { cert: 'B', wallet: null }];
     assert.deepEqual(selectInventoryItems(rows, null, null).map((r) => r.cert), ['A', 'B']);

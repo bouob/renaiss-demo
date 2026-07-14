@@ -11,18 +11,16 @@ describe('resolveMarketplaceUrl', () => {
     );
   });
 
-  it('falls back to /?q={cert} so a known serial opens marketplace search', () => {
-    assert.equal(
-      resolveMarketplaceUrl({ cert: 'PSA41932666', name: 'Charizard' }),
-      'https://www.renaiss.xyz/?q=PSA41932666',
-    );
+  // No ?q= search fallback: a cert the marketplace doesn't carry lands on an
+  // EMPTY search page (verified against the site's own collectible.list), so
+  // cert / name+set must never produce a URL — callers fall back to the
+  // index.renaissos.com pricing page or render no link.
+  it('returns null for a cert-only card instead of a ?q= search link', () => {
+    assert.equal(resolveMarketplaceUrl({ cert: 'PSA41932666', name: 'Charizard' }), null);
   });
 
-  it('uses name+set when neither tokenId nor cert is known', () => {
-    assert.equal(
-      resolveMarketplaceUrl({ name: 'Riolu', setName: 'Sv1s Scarlet Ex' }),
-      'https://www.renaiss.xyz/?q=Riolu%20Sv1s%20Scarlet%20Ex',
-    );
+  it('returns null for name+set instead of a ?q= search link', () => {
+    assert.equal(resolveMarketplaceUrl({ name: 'Riolu', setName: 'Sv1s Scarlet Ex' }), null);
   });
 
   it('returns null when nothing identifies the card', () => {
@@ -32,13 +30,19 @@ describe('resolveMarketplaceUrl', () => {
   });
 
   it('rejects non-digit or too-short tokenIds (do not invent a card page)', () => {
-    assert.equal(
-      resolveMarketplaceUrl({ tokenId: 'abc', cert: 'PSA1' }),
-      'https://www.renaiss.xyz/?q=PSA1',
-    );
-    assert.equal(
-      resolveMarketplaceUrl({ tokenId: '12345', cert: 'PSA1' }),
-      'https://www.renaiss.xyz/?q=PSA1',
-    );
+    assert.equal(resolveMarketplaceUrl({ tokenId: 'abc', cert: 'PSA1' }), null);
+    assert.equal(resolveMarketplaceUrl({ tokenId: '12345', cert: 'PSA1' }), null);
+  });
+
+  it('never emits a ?q= URL for any input shape', () => {
+    const inputs = [
+      { cert: 'PSA161025104' },
+      { name: 'Umbreon Ex', setName: 'Sv8a-Terastal Fest Ex' },
+      { tokenId: 'abc', cert: 'PSA161025106', name: 'x', setName: 'y' },
+    ];
+    for (const input of inputs) {
+      const url = resolveMarketplaceUrl(input);
+      assert.ok(url === null || !url.includes('?q='), `unexpected search URL for ${JSON.stringify(input)}: ${url}`);
+    }
   });
 });

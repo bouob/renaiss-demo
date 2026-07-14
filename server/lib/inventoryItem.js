@@ -44,6 +44,16 @@ function sanitizeString(v, max) {
   return s || null;
 }
 
+// renaiss.xyz /card/{tokenId} deep-link key: a large decimal uint256 string.
+// Mirrors the client's normalizeTokenId — junk must be dropped, never stored;
+// the client refuses to build a URL off it, so persisting it only masks the miss.
+function sanitizeTokenId(v) {
+  if (v == null) return null;
+  const s = String(v).trim();
+  if (!/^\d{10,100}$/.test(s)) return null;
+  return s;
+}
+
 export function sanitizeItem(body, cert) {
   const status = typeof body.status === 'string' && STATUSES.has(body.status)
     ? body.status : 'active';
@@ -73,6 +83,7 @@ export function sanitizeItem(body, cert) {
       ? Math.max(ALPHA_PCT_MIN, Math.min(ALPHA_PCT_MAX, body.alphaPct30d))
       : null,
     href: sanitizeString(body.href, 300),
+    tokenId: sanitizeTokenId(body.tokenId),
     notes: sanitizeString(body.notes, 1000),
     acquireType,
     costSource,
@@ -91,6 +102,7 @@ export function sanitizeItem(body, cert) {
   if (patch.onChainCostUsd == null) delete patch.onChainCostUsd;
   if (patch.packPaymentTxHash == null) delete patch.packPaymentTxHash;
   if (patch.addedVia == null) delete patch.addedVia;
+  if (patch.tokenId == null) delete patch.tokenId;
   if (patch.sourceWallet == null) delete patch.sourceWallet;
   if (patch.alphaPct30d == null) delete patch.alphaPct30d;
   if (patch.wallet == null) delete patch.wallet;

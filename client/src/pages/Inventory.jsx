@@ -446,6 +446,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     const onChainCostUsd = Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null;
     return {
       cert: h.serial || h.tokenId,
+      // The chain tokenId is the only key that can deep-link renaiss.xyz/card/{id};
+      // dropping it here forced the detail modal onto a search fallback.
+      tokenId: h.tokenId ?? null,
       name: h.name ?? null,
       setName: h.setName ?? null,
       grade: h.grade ?? null,

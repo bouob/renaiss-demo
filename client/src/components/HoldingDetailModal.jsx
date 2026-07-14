@@ -235,8 +235,9 @@ export default function HoldingDetailModal({
   const notice = adjacentNotice(related);
 
   function renderNeighbor(n) {
-    // Neighbors are already identified by Index brief (name/set/cert). Link to
-    // marketplace with cert as the stable search key — Index API has no tokenId.
+    // Marketplace deep link only when the server resolved a tokenId — no
+    // tokenId means the card is not on the marketplace, and a ?q={cert} search
+    // there lands on an empty page. Fall back to the Index pricing page.
     const market = resolveMarketplaceUrl({
       tokenId: n.tokenId,
       cert: n.cert,
