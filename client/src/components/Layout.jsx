@@ -1,10 +1,11 @@
 import { NavLink } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import LanguageSwitcher from './LanguageSwitcher.jsx';
+import DemoBanner from './DemoBanner.jsx';
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 import brandLogo from '../../Assets/Dokipoki.png';
 
-export default function Layout({ children, user, onSignIn, onSignOut, authReady, firebaseOk, authError }) {
+export default function Layout({ children, user, onSignIn, onSignOut, authReady, firebaseOk, authError, isDemo }) {
   const { t } = useTranslation();
 
   return (
@@ -42,18 +43,19 @@ export default function Layout({ children, user, onSignIn, onSignOut, authReady,
         <div className="topnav-actions">
           <LanguageSwitcher />
           {authReady && firebaseOk && (
-            user ? (
+            (user && !isDemo) ? (
               <button type="button" className="btn btn-ghost btn-sm" onClick={onSignOut}>
                 {user.displayName || user.email || t('nav.signOut')}
               </button>
             ) : (
               <button type="button" className="btn btn-primary btn-sm" onClick={onSignIn}>
-                {t('nav.signIn')}
+                {isDemo ? t('demo.signIn') : t('nav.signIn')}
               </button>
             )
           )}
         </div>
       </header>
+      {isDemo && <DemoBanner onSignIn={onSignIn} />}
       {authError && (
         <div className="empty" style={{ color: 'var(--clear)', marginBottom: '0.75rem' }} role="alert">
           {t('nav.signInFailed')}: {authError}
