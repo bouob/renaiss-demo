@@ -1,4 +1,10 @@
 {
+  "demo": {
+    "bannerTitle": "デモアカウントで閲覧中です",
+    "bannerSubtitle": "カードの追加・編集・削除を自由にお試しください（保存されません）。自分の在庫を作成するには Google でサインインしてください。",
+    "signIn": "Google でサインイン",
+    "dismiss": "閉じる"
+  },
   "lang": {
     "en": "EN",
     "zhTW": "繁中",

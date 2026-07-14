@@ -1,4 +1,10 @@
 {
+  "demo": {
+    "bannerTitle": "您正在使用示範帳戶瀏覽",
+    "bannerSubtitle": "可自由新增、編輯與刪除卡片（不會儲存）。登入 Google 以建立您自己的庫存。",
+    "signIn": "使用 Google 登入",
+    "dismiss": "關閉"
+  },
   "lang": {
     "en": "EN",
     "zhTW": "繁中",

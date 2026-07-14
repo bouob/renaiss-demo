@@ -1,4 +1,10 @@
 {
+  "demo": {
+    "bannerTitle": "You're exploring with a demo account",
+    "bannerSubtitle": "Add, edit, and delete cards freely — nothing here is saved. Sign in with Google to build your own inventory.",
+    "signIn": "Sign in with Google",
+    "dismiss": "Dismiss"
+  },
   "lang": {
     "en": "EN",
     "zhTW": "繁中",
