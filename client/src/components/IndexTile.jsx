@@ -5,6 +5,7 @@
 import { useTranslation } from 'react-i18next';
 import InteractiveTrendChart from './InteractiveTrendChart.jsx';
 import InfoHint from './InfoHint.jsx';
+import IndexBasketArt from './IndexBasketArt.jsx';
 
 const WINDOW_DAYS = { d7: 7, d30: 30, d365: 365 };
 
@@ -96,7 +97,11 @@ export default function IndexTile({ index, dateLocale = 'en-US', windowKey = 'd3
         </p>
         <div className="index-methodology-note">
           <span>{t('index.methodologyLabel')}</span>
-          <InfoHint label={t('index.methodologyHint')} />
+          <InfoHint
+            label={t('index.methodologyText')}
+            placement="top"
+            art={<IndexBasketArt />}
+          />
         </div>
       </div>
     </div>

@@ -1117,14 +1117,13 @@ a:hover {
   border-color: var(--glass-border-hover);
   outline: none;
 }
-.info-hint::after {
-  content: attr(data-tip);
+.info-hint-tip {
   position: absolute;
   top: calc(100% + 0.5rem);
   right: 0;
   width: max-content;
-  max-width: 260px;
-  padding: 0.55rem 0.7rem;
+  max-width: 310px;
+  padding: 0.6rem 0.72rem;
   border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
   background: var(--bg-elevated);
@@ -1146,11 +1145,55 @@ a:hover {
   pointer-events: none;
   z-index: 30;
 }
-.info-hint:hover::after,
-.info-hint:focus-visible::after {
+.info-hint-tip-art {
+  display: block;
+  margin: -0.2rem -0.15rem 0.45rem;
+}
+.index-basket-art {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-height: 92px;
+}
+.info-hint:hover .info-hint-tip,
+.info-hint:focus-visible .info-hint-tip {
   opacity: 1;
   visibility: visible;
   transform: translateY(0);
+}
+
+/* Open upward when the hint sits near a clipping container's bottom edge. */
+.info-hint--top .info-hint-tip {
+  top: auto;
+  bottom: calc(100% + 0.5rem);
+  transform: translateY(4px);
+}
+
+/* Structured tip: one labeled row per methodology fact. */
+.info-hint-tip-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+.info-hint-tip-row {
+  display: grid;
+  grid-template-columns: minmax(4.5rem, auto) 1fr;
+  gap: 0.15rem 0.6rem;
+}
+.info-hint-tip-term {
+  color: var(--neon-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  line-height: 1.5;
+}
+.info-hint-tip-detail {
+  color: var(--text-secondary);
+}
+.info-hint-tip-copy {
+  display: block;
+  white-space: pre-line;
 }
 
 .attr {
