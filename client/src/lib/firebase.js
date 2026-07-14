@@ -5,7 +5,7 @@
  */
 
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, signInAnonymously } from 'firebase/auth';
 import { clearRelatedCache } from './relatedCache.js';
 
 const config = {
@@ -38,6 +38,11 @@ export async function signInWithGoogle() {
   if (!auth) throw new Error('Firebase Auth not configured');
   const provider = new GoogleAuthProvider();
   return signInWithPopup(auth, provider);
+}
+
+export async function signInAnonymouslyUser() {
+  if (!auth) throw new Error('Firebase Auth not configured');
+  return signInAnonymously(auth);
 }
 
 export async function signOutUser() {

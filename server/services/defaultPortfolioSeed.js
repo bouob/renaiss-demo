@@ -31,6 +31,17 @@ export const DEMO_PROMOTE_ALPHA_BY_CERT = new Map([
   ['PSA151789461', 0.08], // Grey Felt Hat Pikachu
 ]);
 
+// Build a short grade chip from a card name, e.g. "PSA 10 Gem Mint …" -> "PSA 10".
+// Some companies distinguish a special top tier from the plain 10, so keep an
+// abbreviated suffix for those: CGC 10 Pristine -> "CGC 10 P.", BGS 10 Black -> "BGS 10 B.".
+function demoGradeLabel(name) {
+  const m = name.match(/(PSA|CGC|BGS) (\d+(?:\.\d)?)\b(?: (Pristine|Black))?/);
+  if (!m) return 'PSA 10';
+  const [, company, number, tier] = m;
+  const suffix = tier ? ` ${tier[0]}.` : '';
+  return `${company} ${number}${suffix}`;
+}
+
 export const DEFAULT_PORTFOLIO_ITEMS = [
   ['PSA114662766', 'PSA 10 Gem Mint 2023 Pokemon Sword And Shield Crown Zenith 160 Pikachu', 'Pokemon Sword And Shield Crown Zenith', 'https://8nothtoc5ds7a0x3.public.blob.vercel-storage.com/graded-cards-renders/PSA114662766/nft_image.jpg', 29531, '/card/pokemon/pokemon-sword-and-shield-crown-zenith/160-pikachu-psa-10-35d7f310'],
   ['PSA136225944', 'PSA 10 Gem Mint 2025 Pokemon Japanese Mbg-Mega Starter Set Mega Gengar Ex 003 Mega Gengar Ex', 'Pokemon Japanese Mbg-Mega Starter Set Mega Gengar Ex', 'https://8nothtoc5ds7a0x3.public.blob.vercel-storage.com/graded-cards-renders/PSA136225944/nft_image.jpg', 3684, '/card/pokemon/pokemon-japanese-mbg-mega-starter-set-mega-gengar-ex/003-mega-gengar-ex-psa-10-japanese-de0d46db'],
@@ -86,7 +97,7 @@ export const DEFAULT_PORTFOLIO_ITEMS = [
     cert,
     name,
     setName,
-    grade: name.match(/(?:PSA|CGC) (?:10|9) (?:Gem Mint|Mint|Pristine)/)?.[0]?.replace(/^(?:PSA|CGC) /, '') || '10 Gem Mint',
+    grade: demoGradeLabel(name),
     imageUrl,
     ...(priceUsdCents == null ? {} : {
       priceUsdCents,

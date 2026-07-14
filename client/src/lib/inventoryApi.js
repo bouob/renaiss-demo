@@ -32,6 +32,15 @@ export function unlinkWallet(wallet, { authToken } = {}) {
   return postJson('/meta/unlink-wallet', { wallet }, { authToken, timeoutMs: 60_000 });
 }
 
+/**
+ * Tear down an anonymous demo account after upgrading to Google. Sends the
+ * demo account's `anonToken` in the body and the new Google user's token in
+ * the Authorization header (via `authToken`).
+ */
+export function discardDemoAccount(anonToken, { authToken } = {}) {
+  return postJson('/meta/discard-demo', { anonToken }, { authToken, timeoutMs: 60_000 });
+}
+
 /** Delete a single holding the user owns (demo or personal). */
 export function deleteMeta(cert, { authToken } = {}) {
   return delJson(`/meta/${encodeURIComponent(cert)}`, { authToken });
