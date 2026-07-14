@@ -31,6 +31,11 @@ export function rememberHeldCerts(certs) {
   for (const c of certs ?? []) rememberHeldCert(c);
 }
 
+export function forgetHeldCert(cert) {
+  if (typeof cert !== 'string' || !cert.trim()) return;
+  allowlist.delete(cert.trim());
+}
+
 export function isHeldCertAllowed(cert) {
   if (typeof cert !== 'string' || !cert.trim()) return false;
   const key = cert.trim();

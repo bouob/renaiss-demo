@@ -53,15 +53,49 @@ function foundPayload(name) {
   };
 }
 
-/** Routes the stub by cert so each neighbor can succeed or fail independently. */
-function stubFetchByCert(byCert) {
+/** A tRPC collectible.list body carrying an exact Serial match for `cert`. */
+function marketplaceBody(cert) {
+  return [{
+    result: {
+      data: {
+        json: {
+          collection: [{
+            tokenId: tokenIdFor(cert),
+            itemId: `${cert.toLowerCase()}-0000-4000-8000-000000000000`,
+            name: 'Card',
+            setName: 'Set',
+            attributes: [{ trait: 'Serial', value: cert }],
+          }],
+        },
+      },
+    },
+  }];
+}
+
+/** A deterministic 20-digit stand-in for the chain tokenId (must be ^\d{10,100}$). */
+function tokenIdFor(cert) {
+  return cert.replace(/\D/g, '').padEnd(20, '0');
+}
+
+/** A tRPC body with no rows — the marketplace genuinely does not carry the cert. */
+const MARKETPLACE_EMPTY = [{ result: { data: { json: { collection: [] } } } }];
+
+/**
+ * Routes the stub by cert so each neighbor can succeed or fail independently.
+ * `marketplace` overrides the tRPC enrich response (default: every cert is
+ * listed, since the service now only returns neighbors the marketplace can
+ * actually open). It receives the queried cert, so a stub can list one neighbor
+ * and not the other.
+ */
+function stubFetchByCert(byCert, { marketplace } = {}) {
   let calls = 0;
   globalThis.fetch = async (url) => {
     const u = String(url);
-    // Marketplace tRPC enrich is best-effort and tested separately — keep it
-    // silent here so Index-call counts stay meaningful.
     if (u.includes('renaiss.xyz') || u.includes('collectible.list')) {
-      return fakeResponse([{ result: { data: { json: { collection: [] } } } }]);
+      const queried = decodeURIComponent(u).match(/PSA\d+/)?.[0] ?? '';
+      return marketplace
+        ? marketplace(queried)
+        : fakeResponse(marketplaceBody(queried));
     }
     calls += 1;
     const hit = Object.entries(byCert).find(([cert]) => u.includes(cert));
@@ -129,11 +163,72 @@ describe('getAdjacentCertSuggestions', () => {
     const first = await getAdjacentCertSuggestions(CERT);
     assert.equal(first.neighbors.length, 1, 'fail-open: still returns the healthy neighbor');
     assert.equal(first.neighbors[0].delta, 1);
+    // A null brief shortens the list for the same reason a tRPC blip empties it:
+    // upstream fell over. `degraded` covers BOTH upstreams, not just marketplace.
+    assert.equal(first.degraded, true);
     assert.equal(__cacheSizeForTest(), 0, 'a transient failure must not be cached');
 
     const afterFirst = calls();
     await getAdjacentCertSuggestions(CERT);
     assert.ok(calls() > afterFirst, 'second call must re-query upstream, not serve a frozen result');
+  });
+
+  it('drops a neighbor the marketplace does not carry, keeping the one it does', async () => {
+    // The whole point of the list: every row must open on renaiss.xyz. A cert
+    // the marketplace has no listing for is not shown at all — no dead row, and
+    // no consolation link to the Index pricing page (which is not a buy surface).
+    stubFetchByCert(
+      {
+        [BELOW]: () => fakeResponse(foundPayload('Riolu')),
+        [ABOVE]: () => fakeResponse(foundPayload('Riolu')),
+      },
+      { marketplace: (cert) => fakeResponse(cert === BELOW ? marketplaceBody(cert) : MARKETPLACE_EMPTY) },
+    );
+
+    const { neighbors, degraded } = await getAdjacentCertSuggestions(CERT);
+    assert.equal(neighbors.length, 1);
+    assert.equal(neighbors[0].cert, BELOW);
+    assert.equal(neighbors[0].delta, -1);
+    assert.equal(neighbors[0].tokenId, tokenIdFor(BELOW));
+    assert.equal(degraded, false, 'an unlisted cert is a real answer, not a failure');
+    assert.equal(__cacheSizeForTest(), 1, 'a definitive answer is cacheable');
+  });
+
+  it('reports degraded when EVERY Index brief failed, so the empty list is not read as "none listed"', async () => {
+    // The sibling of the marketplace case: if the Index itself is down, the
+    // marketplace enrich never even runs (no found neighbors to enrich), and the
+    // list is empty for a reason the merchant can retry away.
+    stubFetchByCert({
+      [BELOW]: () => fakeResponse(null, { status: 500 }),
+      [ABOVE]: () => fakeResponse(null, { status: 500 }),
+    });
+
+    const { neighbors, degraded } = await getAdjacentCertSuggestions(CERT);
+    assert.deepEqual(neighbors, []);
+    assert.equal(degraded, true);
+    assert.equal(__cacheSizeForTest(), 0);
+  });
+
+  it('reports degraded (not "no neighbors") when the enrich failed transiently', async () => {
+    // A tRPC 5xx leaves every neighbor without a tokenId, so the filtered list
+    // is empty — but that is a lookup failure, not "this market has no adjacent
+    // cards". The flag lets the client say so, and the result is never cached.
+    const calls = stubFetchByCert(
+      {
+        [BELOW]: () => fakeResponse(foundPayload('Umbreon ex')),
+        [ABOVE]: () => fakeResponse(foundPayload('Charizard ex')),
+      },
+      { marketplace: () => fakeResponse({}, { status: 503 }) },
+    );
+
+    const first = await getAdjacentCertSuggestions(CERT);
+    assert.deepEqual(first.neighbors, []);
+    assert.equal(first.degraded, true);
+    assert.equal(__cacheSizeForTest(), 0, 'a transient marketplace failure must not be cached');
+
+    const afterFirst = calls();
+    await getAdjacentCertSuggestions(CERT);
+    assert.ok(calls() > afterFirst, 'second call must re-query, not serve a frozen empty result');
   });
 
   it('caches a genuinely empty result (every neighbor definitively not found)', async () => {

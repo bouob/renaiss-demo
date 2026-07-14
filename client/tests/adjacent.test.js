@@ -36,6 +36,24 @@ describe('adjacentNotice', () => {
     assert.deepEqual(notice, { key: 'detail.adjacentFailed', retryable: true });
   });
 
+  it('blames the marketplace lookup, not the card, when the enrich degraded', () => {
+    // An empty list with degraded set means the tRPC enrich failed,
+    // so every neighbor lost its tokenId and got filtered out. Saying "this
+    // market has no adjacent cards" would be a lie the user cannot act on.
+    const notice = adjacentNotice({ gated: false, reason: null, neighbors: [], degraded: true });
+    assert.deepEqual(notice, { key: 'detail.adjacentFailed', retryable: true });
+  });
+
+  it('ignores degraded once at least one neighbor survived', () => {
+    const notice = adjacentNotice({
+      gated: false,
+      reason: null,
+      degraded: true,
+      neighbors: [{ cert: 'PSA1', delta: -1 }],
+    });
+    assert.equal(notice, null, 'a partial list is still worth rendering');
+  });
+
   it('reports a genuinely empty (ungated) result as retryable', () => {
     // Retryable because the service only caches an empty result when every
     // neighbor got a definitive answer — so a retry either hits that cache for

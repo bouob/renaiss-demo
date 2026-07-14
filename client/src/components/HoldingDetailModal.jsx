@@ -4,8 +4,8 @@ import InteractiveTrendChart from './InteractiveTrendChart.jsx';
 import StrengthBar from './StrengthBar.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
-import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
-import { resolveMarketplaceUrl, openMarketplacePage } from '../lib/renaissMarketplaceUrl.js';
+import { resolveMarketplaceUrl } from '../lib/renaissMarketplaceUrl.js';
+import { getCachedRelated, setCachedRelated } from '../lib/relatedCache.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
 import { adjacentNotice } from '../lib/adjacent.js';
@@ -20,6 +20,7 @@ export default function HoldingDetailModal({
   onSaveCost,
   onSaveDetails,
   onUpdateStatus,
+  onDelete,
   getToken,
   user,
   wallet,
@@ -80,7 +81,9 @@ export default function HoldingDetailModal({
     setTab('inventory');
     setSeries(Array.isArray(item.series30d) ? item.series30d : []);
     setReturnPct(item.returnPct30d ?? null);
-    setRelated(null);
+    // Reopening a card looked at minutes ago skips both the "load" click and the
+    // round trip. Failures are never cached, so a retryable state stays retryable.
+    setRelated(getCachedRelated(cert));
     setBrokenThumbs(new Set());
     setAi(null);
     setAiError(null);
@@ -138,6 +141,9 @@ export default function HoldingDetailModal({
       const token = user ? await getToken() : null;
       const res = await fetchRelated(cert, { authToken: token });
       setRelated(res);
+      // Only successful payloads land in the cache (relatedCache drops the rest),
+      // so Retry after a failure always re-queries.
+      setCachedRelated(cert, res);
     } catch (err) {
       setRelated({
         cert,
@@ -233,17 +239,18 @@ export default function HoldingDetailModal({
 
   const notice = adjacentNotice(related);
 
+  // The chain tokenId is the only key that opens this exact card on the
+  // marketplace. Rows staged before it was persisted (and cert/CSV adds, which
+  // never had one) simply show a plain cert — re-scanning the wallet backfills it.
+  const marketUrl = resolveMarketplaceUrl({ tokenId: item.tokenId });
+
   function renderNeighbor(n) {
-    // Neighbors are already identified by Index brief (name/set/cert). Link to
-    // marketplace with cert as the stable search key — Index API has no tokenId.
-    const market = resolveMarketplaceUrl({
-      tokenId: n.tokenId,
-      cert: n.cert,
-      name: n.name,
-      setName: n.setName,
-    });
-    const indexFallback = resolveIndexUrl(n.href);
-    const url = market || indexFallback;
+    // The list only carries certs the marketplace lists, so ↗ means exactly one
+    // thing: this card opens on renaiss.xyz. No Index pricing-page fallback —
+    // that is not a buy surface, and sending the merchant there implies the card
+    // is purchasable when it is not. The unlinked branch below is a guard, not a
+    // path the server should produce.
+    const url = resolveMarketplaceUrl({ tokenId: n.tokenId });
     const thumb = n.imageUrlThumb || n.imageUrl;
     const name = n.name ?? t('common.card');
     const meta = [n.gradeLabel, n.setName, n.cardNumber].filter(Boolean).join(' · ')
@@ -298,10 +305,10 @@ export default function HoldingDetailModal({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={(e) => {
-          if (market) openMarketplacePage({ tokenId: n.tokenId, cert: n.cert, name: n.name, setName: n.setName }, e);
-          else openIndexPage(n.href, e);
-        }}
+        // The anchor is the only navigation: target/rel already give the
+        // new-tab + noopener behavior, so onClick just keeps the click from
+        // reaching enclosing row handlers.
+        onClick={(e) => e.stopPropagation()}
       >
         {body}
       </a>
@@ -410,6 +417,14 @@ export default function HoldingDetailModal({
 
             <p className="small">
               {t('common.cert')} <code>{cert}</code>
+              {marketUrl && (
+                <>
+                  {' · '}
+                  <a href={marketUrl} target="_blank" rel="noopener noreferrer">
+                    {t('detail.renaissMarket')}
+                  </a>
+                </>
+              )}
               {item.setName ? ` · ${item.setName}` : ''}
               {packTx ? ` · pack tx ${packTx}` : ''}
             </p>
@@ -546,6 +561,15 @@ export default function HoldingDetailModal({
                 </div>
 
                 <div className="modal-actions holding-detail-save-row" style={{ marginTop: '0.6rem' }}>
+                  {onDelete && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm holding-detail-delete"
+                      onClick={() => onDelete(cert)}
+                    >
+                      {t('detail.delete')}
+                    </button>
+                  )}
                   <button type="button" className="btn btn-ghost btn-sm holding-detail-reset" onClick={resetToSnapshot}>
                     {t('detail.reset')}
                   </button>

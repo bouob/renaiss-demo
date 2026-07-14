@@ -46,6 +46,14 @@ export function adjacentNotice(related) {
   // because the cert has no neighbors.
   if (related.gated) return { key: 'detail.adjacentFailed', retryable: true };
 
+  // An empty list because an upstream fell over (Index brief or marketplace
+  // tRPC) is NOT "this market has no adjacent cards". Blaming the card would
+  // leave the merchant with nothing to act on; the service does not cache a
+  // degraded result, so retry is real.
+  if (related.degraded && !related.neighbors?.length) {
+    return { key: 'detail.adjacentFailed', retryable: true };
+  }
+
   if (!related.neighbors?.length) return { key: 'detail.noNeighbors', retryable: true };
 
   return null;

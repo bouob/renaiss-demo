@@ -1,4 +1,4 @@
-import { getJson, postJson, putJson } from './httpClient.js';
+import { getJson, postJson, putJson, delJson } from './httpClient.js';
 
 export function fetchCard(cert, { series = false, authToken } = {}) {
   const q = series ? '?series=1' : '';
@@ -39,6 +39,16 @@ export function unlinkWallet(wallet, { authToken } = {}) {
  */
 export function discardDemoAccount(anonToken, { authToken } = {}) {
   return postJson('/meta/discard-demo', { anonToken }, { authToken, timeoutMs: 60_000 });
+}
+
+/** Delete a single holding the user owns (demo or personal). */
+export function deleteMeta(cert, { authToken } = {}) {
+  return delJson(`/meta/${encodeURIComponent(cert)}`, { authToken });
+}
+
+/** Delete every seeded demo row for the account. */
+export function clearDemoInventory({ authToken } = {}) {
+  return postJson('/meta/clear-demo', {}, { authToken, timeoutMs: 60_000 });
 }
 
 export function fetchTicker(options = {}) {
