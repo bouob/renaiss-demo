@@ -256,11 +256,17 @@ function requestOptions() {
  * @param {string} label - identifies the caller in warn logs (may embed the
  *   already-validated input, e.g. `getGradedFmv(PSA1)`).
  * @param {string} [feature] - P0-4 telemetry tag, see FEATURE_BUDGETS.
- * @returns {Promise<unknown|null>} parsed JSON body, or null on any failure
- *   mode (disabled/breaker open/quota exhausted/non-2xx/timeout/network
- *   error/abandoned 429). Never throws.
+ * @param {object} [opts]
+ * @param {unknown} [opts.notFoundValue] - what a 404 resolves to. A 404 is a
+ *   *determinate* answer ("upstream does not carry this"), not a failure, so an
+ *   endpoint whose miss is meaningful passes the payload it wants back. Left
+ *   undefined, a 404 keeps folding into null with every other failure — correct
+ *   for endpoints (indices, series) where a 404 means the path itself is wrong.
+ * @returns {Promise<unknown|null>} parsed JSON body, `opts.notFoundValue` on a
+ *   404 when given, or null on any failure mode (disabled/breaker open/quota
+ *   exhausted/non-2xx/timeout/network error/abandoned 429). Never throws.
  */
-async function requestUpstreamJson(path, label, feature) {
+async function requestUpstreamJson(path, label, feature, { notFoundValue } = {}) {
   if (!KEYS_CONFIGURED) return null;
   if (breakerOpen()) return null;
   if (quotaExhausted()) return null;
@@ -295,6 +301,15 @@ async function requestUpstreamJson(path, label, feature) {
 
     const remaining = noteRateLimitRemaining(res.headers);
     logFeatureTelemetry(feature, remaining);
+
+    if (res.status === 404 && notFoundValue !== undefined) {
+      // Upstream answered, and the answer is "no such record". That is a
+      // success for the breaker (it proves the service is up) and a cacheable
+      // negative for the caller — folding it into null would both report an
+      // outage and re-ask upstream for the same miss forever.
+      noteSuccess();
+      return notFoundValue;
+    }
 
     if (!res.ok) {
       if (res.status >= 500) noteFailure(`HTTP ${res.status}`);
@@ -372,6 +387,12 @@ function getGradedLookupPayload(cert, feature) {
       `/v1/graded/${encodeURIComponent(key)}`,
       `getGradedLookup(${key})`,
       feature,
+      // A cert the Index does not track is a real answer, whether it arrives as
+      // 200 `{found:false}` or as a 404. Both must read the same downstream:
+      // adjacent-cert suggestions treat a null brief as a transient upstream
+      // failure, so a 404 folded into null would surface an untracked neighbor
+      // as "lookup failed" — and never cache the miss.
+      { notFoundValue: { found: false, reason: 'not_found' } },
     );
     if (data) await gradedCacheWrite(key, data);
     return data;
