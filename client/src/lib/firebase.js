@@ -6,6 +6,7 @@
 
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
+import { clearRelatedCache } from './relatedCache.js';
 
 const config = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -40,6 +41,10 @@ export async function signInWithGoogle() {
 }
 
 export async function signOutUser() {
+  // Ownership-gated payloads memoized for this tab must not outlive the session
+  // that was allowed to see them — the next account would be served them without
+  // /related ever re-running its gate.
+  clearRelatedCache();
   if (!auth) return;
   return signOut(auth);
 }
