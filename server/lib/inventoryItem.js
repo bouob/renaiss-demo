@@ -2,6 +2,7 @@
 
 import { isValidAddressShape } from './walletGuard.js';
 import { sanitizeMoney, sanitizeQty, sanitizeNonNegInt } from './moneySanitize.js';
+import { normalizeTokenId } from './tokenId.js';
 
 export const COLLECTION = 'hackathonMerchantInventory';
 export const CERT_SHAPE = /^[A-Za-z0-9._-]{3,64}$/;
@@ -44,16 +45,6 @@ function sanitizeString(v, max) {
   return s || null;
 }
 
-// renaiss.xyz /card/{tokenId} deep-link key: a large decimal uint256 string.
-// Mirrors the client's normalizeTokenId — junk must be dropped, never stored;
-// the client refuses to build a URL off it, so persisting it only masks the miss.
-function sanitizeTokenId(v) {
-  if (v == null) return null;
-  const s = String(v).trim();
-  if (!/^\d{10,100}$/.test(s)) return null;
-  return s;
-}
-
 export function sanitizeItem(body, cert) {
   const status = typeof body.status === 'string' && STATUSES.has(body.status)
     ? body.status : 'active';
@@ -83,7 +74,9 @@ export function sanitizeItem(body, cert) {
       ? Math.max(ALPHA_PCT_MIN, Math.min(ALPHA_PCT_MAX, body.alphaPct30d))
       : null,
     href: sanitizeString(body.href, 300),
-    tokenId: sanitizeTokenId(body.tokenId),
+    // Junk is dropped, never stored: the client refuses to build a URL off a
+    // malformed tokenId, so persisting one only masks the miss.
+    tokenId: normalizeTokenId(body.tokenId),
     notes: sanitizeString(body.notes, 1000),
     acquireType,
     costSource,

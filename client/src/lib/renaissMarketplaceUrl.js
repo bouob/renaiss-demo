@@ -20,11 +20,12 @@
 export const RENAISS_MARKETPLACE_BASE_URL = 'https://www.renaiss.xyz';
 
 /**
+ * `tokenId` is the only field read. Any other key on `card` (cert, name,
+ * setName…) is ignored by contract — callers must not expect it to identify a
+ * card here, and the tests pin that.
+ *
  * @param {object} [card]
  * @param {string|null|undefined} [card.tokenId] - chain NFT token id (decimal string)
- * @param {string|null|undefined} [card.cert] - accepted for caller convenience; never builds a URL
- * @param {string|null|undefined} [card.name] - accepted for caller convenience; never builds a URL
- * @param {string|null|undefined} [card.setName] - accepted for caller convenience; never builds a URL
  * @returns {string|null} absolute marketplace URL, or null when the card has no tokenId
  */
 export function resolveMarketplaceUrl(card = {}) {
@@ -36,23 +37,8 @@ export function resolveMarketplaceUrl(card = {}) {
   return null;
 }
 
-/**
- * Open marketplace page in a new tab (stopPropagation for nested handlers).
- * @param {object} [card]
- * @param {Event} [e]
- * @returns {boolean} true if a tab was opened
- */
-export function openMarketplacePage(card, e) {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-  const url = resolveMarketplaceUrl(card);
-  if (!url) return false;
-  window.open(url, '_blank', 'noopener,noreferrer');
-  return true;
-}
-
+// Mirrors server/lib/tokenId.js — client MUST NOT import server runtime code,
+// so this copy is deliberate. Keep the two regexes in step.
 function normalizeTokenId(value) {
   if (value == null) return null;
   const s = String(value).trim();

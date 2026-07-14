@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import {
   pickExact,
   lookupMarketplaceByCert,
+  lookupMarketplaceByCerts,
   __resetForTest,
 } from '../services/renaissMarketplaceLookup.js';
 
@@ -100,5 +101,60 @@ describe('lookupMarketplaceByCert', () => {
   it('fails open on HTTP errors', async () => {
     globalThis.fetch = async () => ({ ok: false, status: 503, async json() { return {}; } });
     assert.equal(await lookupMarketplaceByCert(CERT), null);
+  });
+
+  it('does NOT cache a transient HTTP failure — it is not a determinate miss', async () => {
+    // A 5xx means "tRPC is unwell", not "this cert is not on the marketplace".
+    // Caching it for the 24h TTL would freeze the card as un-deep-linkable long
+    // after the site recovered — and the client no longer has a ?q= fallback.
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      return { ok: false, status: 503, async json() { return {}; } };
+    };
+    assert.equal(await lookupMarketplaceByCert(CERT), null);
+    assert.equal(await lookupMarketplaceByCert(CERT), null);
+    assert.equal(calls, 2, 'a transient failure must be re-queried, not served from cache');
+  });
+
+  it('does NOT cache a thrown fetch (timeout / abort / network)', async () => {
+    let calls = 0;
+    globalThis.fetch = async () => {
+      calls += 1;
+      throw new Error('aborted');
+    };
+    assert.equal(await lookupMarketplaceByCert(CERT), null);
+    assert.equal(await lookupMarketplaceByCert(CERT), null);
+    assert.equal(calls, 2, 'a thrown fetch must be re-queried, not served from cache');
+  });
+});
+
+describe('lookupMarketplaceByCerts', () => {
+  beforeEach(() => __resetForTest());
+  afterEach(() => { globalThis.fetch = realFetch; });
+
+  it('reports transient:false and maps each cert to its lookup on a healthy call', async () => {
+    globalThis.fetch = async () => ({ ok: true, status: 200, async json() { return trpcBody(); } });
+    const { byCert, transient } = await lookupMarketplaceByCerts([CERT]);
+    assert.equal(transient, false);
+    assert.equal(byCert.get(CERT).tokenId, TOKEN);
+  });
+
+  it('reports transient:true when any cert failed transiently', async () => {
+    globalThis.fetch = async () => ({ ok: false, status: 503, async json() { return {}; } });
+    const { byCert, transient } = await lookupMarketplaceByCerts([CERT]);
+    assert.equal(transient, true, 'callers gate their own cache write on this');
+    assert.equal(byCert.get(CERT), null, 'still fail-open: the value is null');
+  });
+
+  it('reports transient:false for a determinate miss (200, no exact match)', async () => {
+    globalThis.fetch = async () => ({
+      ok: true,
+      status: 200,
+      async json() { return trpcBody({ serial: 'PSA0' }); },
+    });
+    const { byCert, transient } = await lookupMarketplaceByCerts([CERT]);
+    assert.equal(transient, false, 'a real "not on the marketplace" answer is cacheable');
+    assert.equal(byCert.get(CERT), null);
   });
 });

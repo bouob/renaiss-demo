@@ -4,8 +4,8 @@ import InteractiveTrendChart from './InteractiveTrendChart.jsx';
 import StrengthBar from './StrengthBar.jsx';
 import { fetchCard, fetchRelated, analyzeMerchantInsight } from '../lib/inventoryApi.js';
 import { merchantInsightErrorMessage } from '../lib/insightErrors.js';
-import { resolveIndexUrl, openIndexPage } from '../lib/renaissIndexUrl.js';
-import { resolveMarketplaceUrl, openMarketplacePage } from '../lib/renaissMarketplaceUrl.js';
+import { resolveIndexUrl } from '../lib/renaissIndexUrl.js';
+import { resolveMarketplaceUrl } from '../lib/renaissMarketplaceUrl.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
 import { adjacentNotice } from '../lib/adjacent.js';
@@ -234,16 +234,16 @@ export default function HoldingDetailModal({
 
   const notice = adjacentNotice(related);
 
+  // The chain tokenId is the only key that opens this exact card on the
+  // marketplace. Rows staged before it was persisted (and cert/CSV adds, which
+  // never had one) simply show a plain cert — re-scanning the wallet backfills it.
+  const marketUrl = resolveMarketplaceUrl({ tokenId: item.tokenId });
+
   function renderNeighbor(n) {
     // Marketplace deep link only when the server resolved a tokenId — no
     // tokenId means the card is not on the marketplace, and a ?q={cert} search
     // there lands on an empty page. Fall back to the Index pricing page.
-    const market = resolveMarketplaceUrl({
-      tokenId: n.tokenId,
-      cert: n.cert,
-      name: n.name,
-      setName: n.setName,
-    });
+    const market = resolveMarketplaceUrl({ tokenId: n.tokenId });
     const indexFallback = resolveIndexUrl(n.href);
     const url = market || indexFallback;
     const thumb = n.imageUrlThumb || n.imageUrl;
@@ -300,10 +300,10 @@ export default function HoldingDetailModal({
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        onClick={(e) => {
-          if (market) openMarketplacePage({ tokenId: n.tokenId, cert: n.cert, name: n.name, setName: n.setName }, e);
-          else openIndexPage(n.href, e);
-        }}
+        // The anchor is the only navigation: target/rel already give the
+        // new-tab + noopener behavior, so onClick just keeps the click from
+        // reaching enclosing row handlers.
+        onClick={(e) => e.stopPropagation()}
       >
         {body}
       </a>
@@ -412,6 +412,14 @@ export default function HoldingDetailModal({
 
             <p className="small">
               {t('common.cert')} <code>{cert}</code>
+              {marketUrl && (
+                <>
+                  {' · '}
+                  <a href={marketUrl} target="_blank" rel="noopener noreferrer">
+                    {t('detail.renaissMarket')}
+                  </a>
+                </>
+              )}
               {item.setName ? ` · ${item.setName}` : ''}
               {packTx ? ` · pack tx ${packTx}` : ''}
             </p>

@@ -442,12 +442,49 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setCertInput('');
   }
 
+  // One shape for a staged row, whatever staged it (wallet scan / cert lookup /
+  // CSV). Each source used to hand-build its own object literal, so a field
+  // added to one path silently went missing on the others — that is exactly how
+  // tokenId got dropped on its way to Firestore.
+  const STAGED_ROW_DEFAULTS = {
+    cert: null,
+    tokenId: null,
+    name: null,
+    setName: null,
+    grade: null,
+    imageUrl: null,
+    indexImageUrl: null,
+    priceUsdCents: null,
+    href: null,
+    series30d: [],
+    returnPct30d: null,
+    cost: null,
+    listPrice: null,
+    onChainCostUsd: null,
+    acquireType: null,
+    costSource: null,
+    status: 'active',
+    qty: 1,
+    wallet: null,
+    addedVia: null,
+    sourceWallet: null,
+    createdAt: null,
+  };
+
+  /** @param {object} partial - source-specific fields; undefined never overrides a default. */
+  function normalizeStagedRow(partial = {}) {
+    const row = { ...STAGED_ROW_DEFAULTS };
+    for (const [key, value] of Object.entries(partial)) {
+      if (value !== undefined) row[key] = value;
+    }
+    return row;
+  }
+
   function stagedRowFromHolding(h, wallet, createdAt) {
     const onChainCostUsd = Number.isFinite(h.onChainCostUsd) ? h.onChainCostUsd : null;
-    return {
+    return normalizeStagedRow({
       cert: h.serial || h.tokenId,
-      // The chain tokenId is the only key that can deep-link renaiss.xyz/card/{id};
-      // dropping it here forced the detail modal onto a search fallback.
+      // The chain tokenId is the only key that can deep-link renaiss.xyz/card/{id}.
       tokenId: h.tokenId ?? null,
       name: h.name ?? null,
       setName: h.setName ?? null,
@@ -460,13 +497,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       cost: onChainCostUsd,
       acquireType: h.acquireType ?? null,
       costSource: h.costSource ?? null,
-      status: 'active',
-      qty: 1,
       wallet,
       addedVia: 'scan',
       sourceWallet: wallet,
       createdAt,
-    };
+    });
   }
 
   async function loadScan() {
@@ -529,7 +564,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         return;
       }
       const art = res.brief?.imageUrl ?? res.brief?.imageUrlThumb ?? null;
-      stageMany([{
+      // No tokenId here by construction: a cert lookup hits the Index, which
+      // carries no chain identity. The card gets its marketplace deep link once
+      // its wallet is scanned.
+      stageMany([normalizeStagedRow({
         cert: res.cert,
         name: res.brief?.name ?? null,
         setName: res.brief?.setName ?? null,
@@ -540,13 +578,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         href: res.fmv?.href ?? res.brief?.href ?? null,
         series30d: res.series30d ?? [],
         returnPct30d: res.returnPct30d ?? null,
-        status: 'active',
-        qty: 1,
-        cost: null,
         costSource: 'manual',
         addedVia: 'cert',
         createdAt: new Date().toISOString(),
-      }]);
+      })]);
       setCertInput('');
     } catch (err) {
       setStageError(err?.message ?? t('inventory.certFailed'));
@@ -564,7 +599,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         ? t('inventory.csvResult', { accepted: accepted.length, rejected: rejected.length })
         : null);
       const now = new Date().toISOString();
-      stageMany(accepted.map((row) => ({ ...row, addedVia: 'csv', createdAt: now })));
+      stageMany(accepted.map((row) => normalizeStagedRow({ ...row, addedVia: 'csv', createdAt: now })));
     };
     reader.readAsText(file);
   }
