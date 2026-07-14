@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Routes, Route } from 'react-router-dom';
 import Layout from './components/Layout.jsx';
 import Dashboard from './pages/Dashboard.jsx';
@@ -11,12 +11,15 @@ import {
   signInWithGoogle,
   signOutUser,
   getIdToken,
+  signInAnonymouslyUser,
 } from './lib/firebase.js';
+import { shouldAttemptAnonSignIn, isDemoUser } from './lib/demoSession.js';
 
 export default function App() {
   const [user, setUser] = useState(null);
   const [authReady, setAuthReady] = useState(!isFirebaseConfigured);
   const [authError, setAuthError] = useState(null);
+  const anonAttemptedRef = useRef(false);
 
   useEffect(() => {
     if (!auth) {
@@ -26,7 +29,20 @@ export default function App() {
     return onAuthStateChanged(auth, (u) => {
       setUser(u);
       setAuthReady(true);
-      if (u) setAuthError(null);
+      if (u) {
+        setAuthError(null);
+      } else if (shouldAttemptAnonSignIn({
+        firebaseOk: isFirebaseConfigured,
+        user: u,
+        attempted: anonAttemptedRef.current,
+      })) {
+        anonAttemptedRef.current = true;
+        signInAnonymouslyUser().catch((err) => {
+          // Provider disabled or offline → stay signed out, fall back to the
+          // existing sign-in gate. Never retry (latch above) to avoid loops.
+          console.warn('[demo] anonymous sign-in failed:', err?.message ?? err);
+        });
+      }
     });
   }, []);
 
@@ -42,12 +58,15 @@ export default function App() {
     }
   }, []);
 
+  const isDemo = isDemoUser(user);
+
   return (
     <Layout
       user={user}
       authReady={authReady}
       firebaseOk={isFirebaseConfigured}
       authError={authError}
+      isDemo={isDemo}
       onSignIn={handleSignIn}
       onSignOut={() => signOutUser()}
     >
