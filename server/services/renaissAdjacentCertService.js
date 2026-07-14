@@ -127,16 +127,27 @@ export async function getAdjacentCertSuggestions(cert) {
       })
       .filter(Boolean);
 
-    // Best-effort marketplace identity (tokenId + renaiss_item_id). Failures
-    // leave tokenId/renaissItemId null — client falls back to /?q={cert}.
-    // Does not participate in the both-success-only Index cache gate: a tRPC
-    // blip must not block caching a healthy Index neighbor list.
+    // Marketplace identity (tokenId + renaiss_item_id). A failure leaves
+    // tokenId/renaissItemId null, and the client renders no marketplace link
+    // (it falls back to the Index pricing page, or to a plain row) — there is
+    // deliberately no /?q={cert} search fallback, because a cert the
+    // marketplace does not carry lands on an empty search page.
+    //
+    // Which is exactly why a *transient* tRPC failure joins the both-success
+    // cache gate below: freezing a tokenId-less result for 6h would strip the
+    // deep link off listed cards long after the site recovered, with nothing to
+    // soften it. A *determinate* miss (200, cert genuinely not listed) is a
+    // real answer and stays cacheable.
     let marketByCert = new Map();
+    let marketTransient = false;
     if (foundNeighbors.length > 0) {
       try {
-        marketByCert = await lookupMarketplaceByCerts(foundNeighbors.map((n) => n.cert));
+        const lookup = await lookupMarketplaceByCerts(foundNeighbors.map((n) => n.cert));
+        marketByCert = lookup.byCert;
+        marketTransient = lookup.transient;
       } catch (err) {
         console.warn(`[renaissAdjacentCertService] marketplace enrich failed: ${err?.message ?? err}`);
+        marketTransient = true;
       }
     }
 
@@ -155,13 +166,14 @@ export async function getAdjacentCertSuggestions(cert) {
 
     // Both-success-only write (mirrors the Renaiss index invariant): a null
     // brief is a *transient* upstream failure (open breaker / exhausted
-    // quota / timeout / 5xx), not a healthy `{ found: false }` negative.
-    // Only freeze the result for the full TTL when every neighbor got a
+    // quota / timeout / 5xx), not a healthy `{ found: false }` negative; the
+    // marketplace enrich contributes its own transient flag the same way.
+    // Only freeze the result for the full TTL when every part got a
     // definitive answer — otherwise a breaker/timeout blip would poison this
     // cert for 6h. The partial/empty result is still returned now
     // (fail-open), just not cached, so the next call re-queries once
     // upstream recovers.
-    const anyTransient = briefs.some((brief) => brief == null);
+    const anyTransient = briefs.some((brief) => brief == null) || marketTransient;
     if (!anyTransient) writeCache(cert, result);
     return result;
   } catch (err) {

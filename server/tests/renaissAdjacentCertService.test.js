@@ -53,15 +53,20 @@ function foundPayload(name) {
   };
 }
 
-/** Routes the stub by cert so each neighbor can succeed or fail independently. */
-function stubFetchByCert(byCert) {
+/**
+ * Routes the stub by cert so each neighbor can succeed or fail independently.
+ * `marketplace` overrides the tRPC enrich response (default: a healthy 200 with
+ * an empty collection — a *determinate* "not on the marketplace", which is
+ * cacheable and keeps Index-call counts meaningful).
+ */
+function stubFetchByCert(byCert, { marketplace } = {}) {
   let calls = 0;
   globalThis.fetch = async (url) => {
     const u = String(url);
-    // Marketplace tRPC enrich is best-effort and tested separately — keep it
-    // silent here so Index-call counts stay meaningful.
     if (u.includes('renaiss.xyz') || u.includes('collectible.list')) {
-      return fakeResponse([{ result: { data: { json: { collection: [] } } } }]);
+      return marketplace
+        ? marketplace()
+        : fakeResponse([{ result: { data: { json: { collection: [] } } } }]);
     }
     calls += 1;
     const hit = Object.entries(byCert).find(([cert]) => u.includes(cert));
@@ -134,6 +139,28 @@ describe('getAdjacentCertSuggestions', () => {
     const afterFirst = calls();
     await getAdjacentCertSuggestions(CERT);
     assert.ok(calls() > afterFirst, 'second call must re-query upstream, not serve a frozen result');
+  });
+
+  it('does NOT cache when the marketplace enrich failed transiently', async () => {
+    // Same invariant as a null brief, one layer over: a tRPC 5xx leaves every
+    // neighbor tokenId:null. Freezing that means "no marketplace deep link" for
+    // the full 6h TTL — and the client has no ?q= search fallback to soften it.
+    const calls = stubFetchByCert(
+      {
+        [BELOW]: () => fakeResponse(foundPayload('Umbreon ex')),
+        [ABOVE]: () => fakeResponse(foundPayload('Charizard ex')),
+      },
+      { marketplace: () => fakeResponse({}, { status: 503 }) },
+    );
+
+    const first = await getAdjacentCertSuggestions(CERT);
+    assert.equal(first.neighbors.length, 2, 'fail-open: the Index briefs still render');
+    assert.equal(first.neighbors[0].tokenId, null);
+    assert.equal(__cacheSizeForTest(), 0, 'a transient marketplace failure must not be cached');
+
+    const afterFirst = calls();
+    await getAdjacentCertSuggestions(CERT);
+    assert.ok(calls() > afterFirst, 'second call must re-query, not serve a tokenId-less frozen result');
   });
 
   it('caches a genuinely empty result (every neighbor definitively not found)', async () => {

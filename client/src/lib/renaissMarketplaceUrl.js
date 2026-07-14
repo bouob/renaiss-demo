@@ -3,26 +3,30 @@
  *
  * Official Index API (api.renaissos.com) has no NFT tokenId field. The
  * marketplace (renaiss.xyz) is the only surface that can open a specific
- * collectible. Resolution order:
+ * collectible, and /card/{tokenId} is the only link worth emitting:
  *
- *   1. tokenId  →  /card/{tokenId}   (exact NFT page; scan results have this)
- *   2. cert     →  /?q={cert}        (serial uniquely identifies the card;
- *                                     renaiss.xyz search accepts PSA/CGC/BGS)
- *   3. name+set →  /?q={name set}    (last resort when we only know labels)
+ * Deliberately NO `?q={cert}` search fallback. A cert the marketplace doesn't
+ * carry lands on an EMPTY search page (verified: unminted neighbor certs
+ * return zero rows from the same collectible.list search this site uses) —
+ * worse than no link. When tokenId is absent it means the card is not on the
+ * marketplace: chain scans carry tokenId natively and the adjacent-cert
+ * service enriches neighbors via the marketplace search, so "no tokenId"
+ * is a determinate miss, not a lookup we skipped. Callers fall back to the
+ * index.renaissos.com pricing page (resolveIndexUrl) or render no link.
  *
- * Always identify the card first (caller supplies known fields), then build
- * the URL. Never invent a tokenId. Fail-closed to null when nothing usable.
+ * Never invent a tokenId. Fail-closed to null when nothing usable.
  */
 
 export const RENAISS_MARKETPLACE_BASE_URL = 'https://www.renaiss.xyz';
 
 /**
+ * `tokenId` is the only field read. Any other key on `card` (cert, name,
+ * setName…) is ignored by contract — callers must not expect it to identify a
+ * card here, and the tests pin that.
+ *
  * @param {object} [card]
  * @param {string|null|undefined} [card.tokenId] - chain NFT token id (decimal string)
- * @param {string|null|undefined} [card.cert] - grader serial, e.g. PSA41932666
- * @param {string|null|undefined} [card.name]
- * @param {string|null|undefined} [card.setName]
- * @returns {string|null} absolute marketplace URL, or null
+ * @returns {string|null} absolute marketplace URL, or null when the card has no tokenId
  */
 export function resolveMarketplaceUrl(card = {}) {
   const c = card && typeof card === 'object' ? card : {};
@@ -30,46 +34,15 @@ export function resolveMarketplaceUrl(card = {}) {
   if (tokenId) {
     return `${RENAISS_MARKETPLACE_BASE_URL}/card/${encodeURIComponent(tokenId)}`;
   }
-
-  const cert = normalizeQueryToken(c.cert);
-  if (cert) {
-    return `${RENAISS_MARKETPLACE_BASE_URL}/?q=${encodeURIComponent(cert)}`;
-  }
-
-  const name = normalizeQueryToken(c.name);
-  const setName = normalizeQueryToken(c.setName);
-  const q = [name, setName].filter(Boolean).join(' ').trim();
-  if (!q) return null;
-  return `${RENAISS_MARKETPLACE_BASE_URL}/?q=${encodeURIComponent(q)}`;
+  return null;
 }
 
-/**
- * Open marketplace page in a new tab (stopPropagation for nested handlers).
- * @param {object} [card]
- * @param {Event} [e]
- * @returns {boolean} true if a tab was opened
- */
-export function openMarketplacePage(card, e) {
-  if (e) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-  const url = resolveMarketplaceUrl(card);
-  if (!url) return false;
-  window.open(url, '_blank', 'noopener,noreferrer');
-  return true;
-}
-
+// Mirrors server/lib/tokenId.js — client MUST NOT import server runtime code,
+// so this copy is deliberate. Keep the two regexes in step.
 function normalizeTokenId(value) {
   if (value == null) return null;
   const s = String(value).trim();
   // tokenIds are large decimal integers; reject empty / non-digit noise.
   if (!/^\d{10,100}$/.test(s)) return null;
   return s;
-}
-
-function normalizeQueryToken(value) {
-  if (typeof value !== 'string') return null;
-  const s = value.trim().slice(0, 120);
-  return s || null;
 }

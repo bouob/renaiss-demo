@@ -10,9 +10,21 @@
  * always: timeout / 5xx / shape change / no exact Serial match → null. Never
  * throws. Exact Serial match is mandatory (search is fuzzy).
  *
- * In-memory cache is long (tokenId never changes for a minted NFT). Cache
- * negative results too so a missing listing does not re-hammer tRPC.
+ * Three states, not two — the whole point of this module's cache discipline:
+ *   hit             a Serial matched → { tokenId, renaissItemId, … }, cached
+ *   determinate miss 200 + parsed + no Serial match → null, cached (a real
+ *                    "not on the marketplace"; re-asking costs tRPC nothing new)
+ *   transient        timeout / abort / network / !res.ok → null, NEVER cached,
+ *                    and reported as `transient` so callers can gate their own
+ *                    cache write on it
+ * Collapsing transient into "miss" would freeze a listed card as
+ * un-deep-linkable for the full 24h TTL after a tRPC blip — and the client has
+ * no ?q= search fallback to soften that (see client/src/lib/renaissMarketplaceUrl.js).
+ *
+ * In-memory cache is long (tokenId never changes for a minted NFT).
  */
+
+import { normalizeTokenId } from '../lib/tokenId.js';
 
 export const MARKETPLACE_TRPC_URL = 'https://www.renaiss.xyz/api/trpc/collectible.list';
 export const LOOKUP_TIMEOUT_MS = 8_000;
@@ -23,47 +35,66 @@ export const MAX_LOOKUP_CACHE = 2000;
 const cache = new Map();
 let maxCache = MAX_LOOKUP_CACHE;
 
+/** @typedef {{ tokenId: string|null, renaissItemId: string|null, name: string|null, setName: string|null }} MarketplaceIdentity */
+
 /**
  * @param {string} cert
- * @returns {Promise<{
- *   tokenId: string|null,
- *   renaissItemId: string|null,
- *   name: string|null,
- *   setName: string|null,
- * }|null>}
+ * @returns {Promise<MarketplaceIdentity|null>} null on both a determinate miss
+ *   and a transient failure — use lookupMarketplaceByCerts when you need to
+ *   tell them apart (e.g. to gate a cache write).
  */
 export async function lookupMarketplaceByCert(cert) {
-  const key = normalizeCert(cert);
-  if (!key) return null;
-
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.computedAt < LOOKUP_CACHE_TTL_MS) {
-    return hit.value;
-  }
-
-  let value = null;
-  try {
-    value = await fetchExactMatch(key);
-  } catch (err) {
-    console.warn(`[renaissMarketplaceLookup] ${key}: ${err?.message ?? err}`);
-    value = null;
-  }
-
-  writeCache(key, value);
+  const { value } = await lookupDetailed(cert);
   return value;
 }
 
 /**
  * Parallel lookup for many certs. Fail-open per cert.
  * @param {string[]} certs
- * @returns {Promise<Map<string, object|null>>} cert → lookup or null
+ * @returns {Promise<{ byCert: Map<string, MarketplaceIdentity|null>, transient: boolean }>}
+ *   `transient` is true when ANY cert failed transiently — callers that cache a
+ *   result derived from these lookups MUST NOT freeze it when it is set.
  */
 export async function lookupMarketplaceByCerts(certs) {
   const list = Array.isArray(certs) ? certs : [];
-  const entries = await Promise.all(
-    list.map(async (c) => [normalizeCert(c) || String(c), await lookupMarketplaceByCert(c)]),
+  const results = await Promise.all(
+    list.map(async (c) => ({
+      key: normalizeCert(c) || String(c),
+      ...(await lookupDetailed(c)),
+    })),
   );
-  return new Map(entries);
+  return {
+    byCert: new Map(results.map((r) => [r.key, r.value])),
+    transient: results.some((r) => r.transient),
+  };
+}
+
+/**
+ * @param {string} cert
+ * @returns {Promise<{ value: MarketplaceIdentity|null, transient: boolean }>}
+ */
+async function lookupDetailed(cert) {
+  const key = normalizeCert(cert);
+  // An unparseable cert is a determinate miss, not an upstream problem.
+  if (!key) return { value: null, transient: false };
+
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.computedAt < LOOKUP_CACHE_TTL_MS) {
+    return { value: hit.value, transient: false };
+  }
+
+  let value;
+  try {
+    value = await fetchExactMatch(key);
+  } catch (err) {
+    // Timeout / abort / network / !res.ok — upstream is unwell, so we learned
+    // nothing about this cert. Return null (fail-open) but do NOT cache it.
+    console.warn(`[renaissMarketplaceLookup] ${key}: ${err?.message ?? err}`);
+    return { value: null, transient: true };
+  }
+
+  writeCache(key, value);
+  return { value, transient: false };
 }
 
 function normalizeCert(cert) {
@@ -126,7 +157,9 @@ async function fetchExactMatch(cert) {
   } finally {
     clearTimeout(timer);
   }
-  if (!res.ok) return null;
+  // Throwing (not returning null) is what marks this transient: a non-2xx says
+  // nothing about whether the marketplace carries this cert.
+  if (!res.ok) throw new Error(`tRPC HTTP ${res.status}`);
   const body = await res.json();
   return pickExact(body, cert);
 }
@@ -168,14 +201,6 @@ function extractSerial(row) {
   // Some rows put the serial in the name prefix ("PSA 10 … PSA104644162") — skip;
   // only trust the Serial attribute for exact match.
   return null;
-}
-
-function normalizeTokenId(value) {
-  if (value == null) return null;
-  // tRPC may return bigint as string in JSON or number for small values.
-  const s = String(value).trim();
-  if (!/^\d{10,100}$/.test(s)) return null;
-  return s;
 }
 
 export function __resetForTest() {
