@@ -2633,13 +2633,24 @@ code {
 .holding-detail-save-row {
   justify-content: space-between;
 }
+.holding-detail-delete,
 .holding-detail-reset,
 .holding-detail-save {
-  width: calc(50% - 0.275rem);
+  flex: 1 1 0;
+  min-width: 0;
   min-height: 3.15rem;
   padding: 0.9rem 0.95rem;
 }
+.holding-detail-delete {
+  color: var(--clear, #ff5c7a);
+  border-color: rgba(255, 92, 122, 0.4);
+}
+.holding-detail-delete:hover {
+  background: rgba(255, 92, 122, 0.1);
+  border-color: rgba(255, 92, 122, 0.6);
+}
 @media (max-width: 720px) {
+  .holding-detail-delete,
   .holding-detail-reset,
   .holding-detail-save {
     width: 100%;

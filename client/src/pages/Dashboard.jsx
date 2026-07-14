@@ -107,6 +107,11 @@ export default function Dashboard({ user, getToken }) {
   const index = wall;
   const top10 = index?.top10 ?? index?.topMovers ?? [];
   const indexHomeUrl = index?.attributionUrl || RENAISS_INDEX_BASE_URL;
+  // The panel is inventory-driven: an empty list means "nothing to classify"
+  // (signed out, or no visible holdings) — not that the market feed is down.
+  const moversEmptyLabel = user
+    ? t('dashboard.moversEmptyNoInventory')
+    : t('dashboard.moversEmptySignedOut');
   const inventoryMovers = useMemo(() => {
     const visibleItems = filterLinkedInventory(inventoryItems, readLastWallet(), defaultWallet);
 
@@ -231,7 +236,7 @@ export default function Dashboard({ user, getToken }) {
                 <p className="label" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</p>
                 <InfoHint label={t('dashboard.moversHint')} />
               </div>
-              {!loading && <MoversList movers={inventoryMovers} />}
+              {!loading && <MoversList movers={inventoryMovers} emptyLabel={moversEmptyLabel} />}
             </section>
           </div>
         </>
@@ -243,7 +248,7 @@ export default function Dashboard({ user, getToken }) {
             <p className="label" style={{ margin: 0 }}>{t('dashboard.moversTitle')}</p>
             <InfoHint label={t('dashboard.moversHint')} />
           </div>
-          <MoversList movers={inventoryMovers} />
+          <MoversList movers={inventoryMovers} emptyLabel={moversEmptyLabel} />
         </section>
       )}
 

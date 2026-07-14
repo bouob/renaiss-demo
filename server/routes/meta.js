@@ -7,11 +7,12 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb } from '../services/firebaseAdmin.js';
-import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
+import { rememberHeldCert, rememberHeldCerts, forgetHeldCert } from '../services/heldCertGate.js';
 import {
   ensureDefaultPortfolio,
   syntheticWallet,
   unlinkWalletInventory,
+  clearDemoInventory,
 } from '../services/defaultPortfolio.js';
 import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
 
@@ -164,6 +165,50 @@ router.post('/meta/unlink-wallet', requireAuth, async (req, res) => {
   } catch (err) {
     console.warn(`[meta:unlink-wallet] ${err?.message ?? err}`);
     return res.status(500).json({ error: 'unlink_failed' });
+  }
+});
+
+/**
+ * POST /meta/clear-demo — delete every seeded demo row (rows tagged with the
+ * account's synthetic wallet). Personal / manual rows and sales are left intact.
+ */
+router.post('/meta/clear-demo', requireAuth, async (req, res) => {
+  try {
+    if (!adminDb) {
+      return res.status(503).json({ error: 'store_unavailable' });
+    }
+    const result = await clearDemoInventory(req.uid);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.warn(`[meta:clear-demo] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'clear_demo_failed' });
+  }
+});
+
+/**
+ * DELETE /meta/:cert — remove a single holding the user owns (demo or personal).
+ * Demo deletes stick: the seeder does not re-add certs the user removed.
+ */
+router.delete('/meta/:cert', requireAuth, async (req, res) => {
+  try {
+    if (!adminDb) {
+      return res.status(503).json({ error: 'store_unavailable' });
+    }
+    const cert = String(req.params?.cert ?? '').trim();
+    if (!CERT_SHAPE.test(cert)) {
+      return res.status(400).json({ error: 'invalid_cert' });
+    }
+    const ref = itemRef(req.uid, cert);
+    const existing = await ref.get();
+    const removed = existing.exists ? 1 : 0;
+    if (removed) await ref.delete();
+    // Drop the /related quota allowance for a cert the user no longer holds,
+    // mirroring how PUT/GET remember held certs.
+    forgetHeldCert(cert);
+    return res.json({ ok: true, removed });
+  } catch (err) {
+    console.warn(`[meta:delete] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'meta_delete_failed' });
   }
 });
 

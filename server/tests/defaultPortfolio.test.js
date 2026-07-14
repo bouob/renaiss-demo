@@ -5,6 +5,7 @@ import {
   ensureDefaultPortfolio,
   restoreMissingDefaultItems,
   unlinkWalletInventory,
+  clearDemoInventory,
 } from '../services/defaultPortfolio.js';
 import { DEFAULT_PORTFOLIO_ITEMS } from '../services/defaultPortfolioSeed.js';
 
@@ -329,5 +330,59 @@ describe('restoreMissingDefaultItems / unlinkWalletInventory', () => {
     const restored = db._store.get(`hackathonMerchantInventory/atomic-user/items/${collided}`);
     assert.ok(restored);
     assert.equal(restored.wallet, demoW);
+  });
+});
+
+describe('clearDemoInventory', () => {
+  it('deletes only demo-wallet rows, leaving personal/manual rows intact', async () => {
+    const db = makeFakeDb();
+    const { wallet: demoW } = await ensureDefaultPortfolio('clear-user', db);
+    const realW = '0xdddddddddddddddddddddddddddddddddddddddd';
+    // A personal (linked-wallet) row and a manual (null-wallet) row.
+    db._store.set('hackathonMerchantInventory/clear-user/items/PERSONAL1', {
+      cert: 'PERSONAL1', wallet: realW, name: 'mine', status: 'active',
+    });
+    db._store.set('hackathonMerchantInventory/clear-user/items/MANUAL1', {
+      cert: 'MANUAL1', wallet: null, name: 'manual', status: 'active',
+    });
+
+    const result = await clearDemoInventory('clear-user', db);
+
+    assert.equal(result.wallet, demoW);
+    assert.equal(result.removed, DEFAULT_PORTFOLIO_ITEMS.length);
+    for (const item of DEFAULT_PORTFOLIO_ITEMS) {
+      assert.equal(
+        db._store.has(`hackathonMerchantInventory/clear-user/items/${item.cert}`),
+        false,
+      );
+    }
+    assert.equal(db._store.has('hackathonMerchantInventory/clear-user/items/PERSONAL1'), true);
+    assert.equal(db._store.has('hackathonMerchantInventory/clear-user/items/MANUAL1'), true);
+  });
+
+  it('keeps the account seeded so demos do not reappear (parent markers untouched)', async () => {
+    const db = makeFakeDb();
+    await ensureDefaultPortfolio('reseed-user', db);
+    const before = { ...db._store.get('hackathonMerchantInventory/reseed-user') };
+
+    await clearDemoInventory('reseed-user', db);
+    assert.deepEqual(db._store.get('hackathonMerchantInventory/reseed-user'), before);
+
+    // A subsequent seed pass must not recreate the deleted demo rows.
+    const again = await ensureDefaultPortfolio('reseed-user', db);
+    assert.equal(again.seeded, false);
+    for (const item of DEFAULT_PORTFOLIO_ITEMS) {
+      assert.equal(
+        db._store.has(`hackathonMerchantInventory/reseed-user/items/${item.cert}`),
+        false,
+      );
+    }
+  });
+
+  it('is a no-op (removed 0) when there are no demo rows', async () => {
+    const db = makeFakeDb();
+    const result = await clearDemoInventory('empty-user', db);
+    assert.equal(result.removed, 0);
+    assert.deepEqual(await clearDemoInventory('empty-user', null), { wallet: null, removed: 0 });
   });
 });
