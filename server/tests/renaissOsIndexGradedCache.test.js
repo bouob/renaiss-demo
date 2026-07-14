@@ -71,4 +71,43 @@ describe('renaissOsIndex graded-lookup cache', () => {
     assert.equal(fmv, null);
     assert.equal(written.length, 0);
   });
+
+  it('treats a 404 as a determinate miss, not a transient failure', async () => {
+    // A 404 says "the Index does not carry this cert" — a real answer. Folding
+    // it into null (the transient signal) makes callers report an outage for a
+    // cert that simply is not tracked, and re-queries upstream forever because a
+    // null is never cached.
+    const written = [];
+    __setCacheForTest(async () => null, async (cert, payload) => { written.push({ cert, payload }); });
+    const calls = stubFetch(async () => fakeResponse({ error: 'not found' }, { status: 404 }));
+
+    const brief = await getGradedCardBrief('PSA404');
+    assert.equal(brief?.found, false, 'a determinate answer, not null');
+    assert.equal(brief.reason, 'not_found');
+    assert.equal(written.length, 1, 'the negative is cacheable');
+    assert.equal(written[0].payload.found, false);
+
+    // ...and the cached negative is served back without touching upstream.
+    __setCacheForTest(async () => written[0].payload, async () => {});
+    const again = await getGradedCardBrief('PSA404');
+    assert.equal(again.found, false);
+    assert.equal(calls(), 1, 'no second upstream call for a known miss');
+  });
+
+  it('getGradedFmv reports a 404 as found:false too', async () => {
+    __setCacheForTest(async () => null, async () => {});
+    stubFetch(async () => fakeResponse({}, { status: 404 }));
+    const fmv = await getGradedFmv('PSA404');
+    assert.equal(fmv?.found, false);
+    assert.equal(fmv.reason, 'not_found');
+    assert.equal(fmv.priceUsdCents, null);
+  });
+
+  it('still treats 5xx as transient (null, uncached) — 404 handling must not soften it', async () => {
+    const written = [];
+    __setCacheForTest(async () => null, async (cert, payload) => { written.push({ cert, payload }); });
+    stubFetch(async () => fakeResponse({}, { status: 503 }));
+    assert.equal(await getGradedCardBrief('PSA503'), null);
+    assert.equal(written.length, 0);
+  });
 });
