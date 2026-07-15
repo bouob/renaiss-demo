@@ -955,16 +955,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {user && hiddenCount > 0 ? (
                   <button
                     type="button"
-                    className="btn btn-ghost inventory-action-btn"
+                    className={`btn ${showHidden ? 'btn-primary' : 'btn-ghost'} inventory-action-btn`}
                     aria-pressed={showHidden}
                     onClick={() => setShowHidden((v) => !v)}
                   >
-                    {showHidden
-                      ? t('inventory.hideHidden')
-                      : t('inventory.showHidden', { count: hiddenCount })}
+                    {t('inventory.showHidden', { count: hiddenCount })}
                   </button>
                 ) : null}
-                {user && hiddenDemoCount > 0 ? (
+                {user && showHidden && hiddenDemoCount > 0 ? (
                   <button
                     type="button"
                     className="btn btn-ghost inventory-action-btn"

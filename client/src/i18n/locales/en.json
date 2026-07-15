@@ -264,7 +264,6 @@
     "hideDemoOk": "Demo cards hidden.",
     "hideDemoFailed": "Failed to hide demo cards",
     "showHidden": "Show hidden ({{count}})",
-    "hideHidden": "Hide hidden cards",
     "restoreDemo": "Restore demo cards",
     "restoringDemo": "Restoring…",
     "restoreDemoHint": "Restore all hidden demo cards",
