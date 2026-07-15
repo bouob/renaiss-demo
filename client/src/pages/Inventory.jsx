@@ -433,12 +433,16 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setError(null);
     try {
       await withAuth((token) => setMetaVisibility(cert, nextHidden, { authToken: token }));
-      // Flip the flag rather than dropping the row, so the modal can stay open
-      // and the merchant can immediately undo (Hide ⇄ Restore).
+      // Optimistic flip for instant feedback (keeps the modal open so the merchant
+      // can undo Hide ⇄ Restore). Then reload from the server so the list, stats
+      // and movers reflect the committed state — the same refetch the bulk
+      // handlers do. Without this, the row only re-filtered on the next unrelated
+      // re-render (e.g. a language switch, which re-runs loadInventory via `t`).
       setItems((prev) => prev.map((i) => (
         (i.cert || i.id) === cert ? { ...i, hidden: nextHidden } : i
       )));
       setCsvNote(t(nextHidden ? 'inventory.hideOk' : 'inventory.restoreOk'));
+      await loadInventory();
     } catch (err) {
       setError(err?.message ?? t(nextHidden ? 'inventory.hideFailed' : 'inventory.restoreFailed'));
     } finally {
