@@ -240,14 +240,20 @@ async function setDemoHidden(uid, hidden, db = adminDb) {
   return { wallet: demoWallet, changed };
 }
 
-/** Hide every demo row. @returns {Promise<{ wallet: string|null, hidden: number }>} */
+/**
+ * Hide every demo row. `changed` is the number of rows newly hidden (0 if all
+ * were already hidden). The bare `hidden` key is reserved for the per-item
+ * boolean on `/meta/:cert/visibility`, so bulk ops report a neutral count.
+ * @returns {Promise<{ wallet: string|null, changed: number }>}
+ */
 export async function hideDemoInventory(uid, db = adminDb) {
-  const r = await setDemoHidden(uid, true, db);
-  return { wallet: r.wallet, hidden: r.changed };
+  return setDemoHidden(uid, true, db);
 }
 
-/** Restore (un-hide) every demo row. @returns {Promise<{ wallet: string|null, shown: number }>} */
+/**
+ * Restore (un-hide) every demo row. `changed` is the number of rows newly shown.
+ * @returns {Promise<{ wallet: string|null, changed: number }>}
+ */
 export async function showDemoInventory(uid, db = adminDb) {
-  const r = await setDemoHidden(uid, false, db);
-  return { wallet: r.wallet, shown: r.changed };
+  return setDemoHidden(uid, false, db);
 }

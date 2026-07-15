@@ -269,6 +269,7 @@
     "restoringDemo": "Restoring…",
     "restoreDemoHint": "Restore all hidden demo cards",
     "restoreDemoOk": "Demo cards restored.",
+    "restoreDemoNone": "No hidden demo cards to restore.",
     "restoreDemoFailed": "Failed to restore demo cards",
     "hideOk": "Card hidden.",
     "hideFailed": "Failed to hide card",

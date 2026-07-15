@@ -118,6 +118,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [hideBusy, setHideBusy] = useState(false);
   const [showBusy, setShowBusy] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
+  const [toggleBusy, setToggleBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -384,6 +385,13 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   );
   // All hidden rows (demo + personal), for the Show-hidden toggle and empty hint.
   const hiddenCount = useMemo(() => enriched.filter((it) => it.isHidden).length, [enriched]);
+  // Only hidden DEMO rows — the "Restore demo cards" bulk button restores just
+  // these, so gating on the combined hiddenCount would surface a no-op button for
+  // a user whose only hidden card is a personal one.
+  const hiddenDemoCount = useMemo(
+    () => enriched.filter((it) => it.isDemo && it.isHidden).length,
+    [enriched],
+  );
 
   async function handleHideDemo() {
     // Non-destructive: rows are kept and restorable, so no confirm prompt.
@@ -392,8 +400,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setError(null);
     try {
       await withAuth((token) => hideDemoInventory({ authToken: token }));
-      setCsvNote(t('inventory.hideDemoOk'));
       await loadInventory();
+      setCsvNote(t('inventory.hideDemoOk'));
     } catch (err) {
       setError(err?.message ?? t('inventory.hideDemoFailed'));
     } finally {
@@ -402,13 +410,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   }
 
   async function handleShowDemo() {
-    if (!user) return;
+    if (!user || hiddenDemoCount === 0) return;
     setShowBusy(true);
     setError(null);
     try {
-      await withAuth((token) => showDemoInventory({ authToken: token }));
-      setCsvNote(t('inventory.restoreDemoOk'));
+      const result = await withAuth((token) => showDemoInventory({ authToken: token }));
       await loadInventory();
+      // Report the real outcome: `changed === 0` means nothing was restored.
+      setCsvNote(t(result?.changed > 0 ? 'inventory.restoreDemoOk' : 'inventory.restoreDemoNone'));
     } catch (err) {
       setError(err?.message ?? t('inventory.restoreDemoFailed'));
     } finally {
@@ -419,7 +428,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   async function handleToggleHidden(cert, nextHidden) {
     // Inventory is only populated for a signed-in user (loadInventory clears it
     // otherwise), so this handler is never reachable while signed out.
-    if (!cert || !user) return;
+    if (!cert || !user || toggleBusy) return; // ignore re-entrant clicks
+    setToggleBusy(true);
     setError(null);
     try {
       await withAuth((token) => setMetaVisibility(cert, nextHidden, { authToken: token }));
@@ -431,6 +441,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setCsvNote(t(nextHidden ? 'inventory.hideOk' : 'inventory.restoreOk'));
     } catch (err) {
       setError(err?.message ?? t(nextHidden ? 'inventory.hideFailed' : 'inventory.restoreFailed'));
+    } finally {
+      setToggleBusy(false);
     }
   }
 
@@ -948,7 +960,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                       : t('inventory.showHidden', { count: hiddenCount })}
                   </button>
                 ) : null}
-                {user && hiddenCount > 0 ? (
+                {user && hiddenDemoCount > 0 ? (
                   <button
                     type="button"
                     className="btn btn-ghost inventory-action-btn"
@@ -981,7 +993,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         {enriched.length === 0 ? (
           <div className="empty">{t('inventory.emptyInventory')}</div>
         ) : sorted.length === 0 ? (
-          hiddenCount > 0 && !showHidden ? (
+          filter === 'all' && hiddenCount > 0 && !showHidden ? (
             <div className="empty">{t('inventory.hiddenEmptyHint', { count: hiddenCount })}</div>
           ) : (
             <div className="empty">{t('inventory.filterEmpty')}</div>
@@ -1143,6 +1155,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           onSaveDetails={saveDetailsGuarded}
           onUpdateStatus={updateStatus}
           onToggleHidden={handleToggleHidden}
+          toggleBusy={toggleBusy}
         />
       )}
 

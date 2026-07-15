@@ -268,6 +268,7 @@
     "restoringDemo": "복원 중…",
     "restoreDemoHint": "숨긴 데모 카드를 모두 복원합니다",
     "restoreDemoOk": "데모 카드를 복원했습니다.",
+    "restoreDemoNone": "복원할 숨긴 데모 카드가 없습니다.",
     "restoreDemoFailed": "데모 카드 복원 실패",
     "hideOk": "카드를 숨겼습니다.",
     "hideFailed": "카드 숨기기 실패",

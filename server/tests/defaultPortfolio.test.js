@@ -350,7 +350,7 @@ describe('hideDemoInventory / showDemoInventory', () => {
     const result = await hideDemoInventory('hide-user', db);
 
     assert.equal(result.wallet, demoW);
-    assert.equal(result.hidden, DEFAULT_PORTFOLIO_ITEMS.length);
+    assert.equal(result.changed, DEFAULT_PORTFOLIO_ITEMS.length);
     // Demo rows stay in the store but are now flagged hidden.
     for (const item of DEFAULT_PORTFOLIO_ITEMS) {
       const row = db._store.get(`hackathonMerchantInventory/hide-user/items/${item.cert}`);
@@ -367,10 +367,10 @@ describe('hideDemoInventory / showDemoInventory', () => {
     await ensureDefaultPortfolio('rt-user', db);
 
     const hideResult = await hideDemoInventory('rt-user', db);
-    assert.equal(hideResult.hidden, DEFAULT_PORTFOLIO_ITEMS.length);
+    assert.equal(hideResult.changed, DEFAULT_PORTFOLIO_ITEMS.length);
 
     const showResult = await showDemoInventory('rt-user', db);
-    assert.equal(showResult.shown, DEFAULT_PORTFOLIO_ITEMS.length);
+    assert.equal(showResult.changed, DEFAULT_PORTFOLIO_ITEMS.length);
     for (const item of DEFAULT_PORTFOLIO_ITEMS) {
       const row = db._store.get(`hackathonMerchantInventory/rt-user/items/${item.cert}`);
       assert.ok(row);
@@ -378,13 +378,16 @@ describe('hideDemoInventory / showDemoInventory', () => {
     }
   });
 
-  it('skips rows already in the target state (idempotent)', async () => {
+  it('skips rows already in the target state (idempotent, both directions)', async () => {
     const db = makeFakeDb();
     await ensureDefaultPortfolio('idem-user', db);
     await hideDemoInventory('idem-user', db);
     // Second hide changes nothing because every demo row is already hidden.
-    const second = await hideDemoInventory('idem-user', db);
-    assert.equal(second.hidden, 0);
+    assert.equal((await hideDemoInventory('idem-user', db)).changed, 0);
+
+    // Symmetric un-hide side: the first show flips them, the second is a no-op.
+    assert.equal((await showDemoInventory('idem-user', db)).changed, DEFAULT_PORTFOLIO_ITEMS.length);
+    assert.equal((await showDemoInventory('idem-user', db)).changed, 0);
   });
 
   it('leaves parent seed markers untouched so nothing re-seeds', async () => {
@@ -401,8 +404,8 @@ describe('hideDemoInventory / showDemoInventory', () => {
 
   it('is a no-op when there are no demo rows, and shape-safe on null db', async () => {
     const db = makeFakeDb();
-    assert.equal((await hideDemoInventory('empty-user', db)).hidden, 0);
-    assert.deepEqual(await hideDemoInventory('empty-user', null), { wallet: null, hidden: 0 });
-    assert.deepEqual(await showDemoInventory('empty-user', null), { wallet: null, shown: 0 });
+    assert.equal((await hideDemoInventory('empty-user', db)).changed, 0);
+    assert.deepEqual(await hideDemoInventory('empty-user', null), { wallet: null, changed: 0 });
+    assert.deepEqual(await showDemoInventory('empty-user', null), { wallet: null, changed: 0 });
   });
 });

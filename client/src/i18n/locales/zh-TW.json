@@ -266,6 +266,7 @@
     "restoringDemo": "還原中…",
     "restoreDemoHint": "還原所有隱藏的示範卡片",
     "restoreDemoOk": "已還原示範卡片。",
+    "restoreDemoNone": "沒有可還原的隱藏示範卡片。",
     "restoreDemoFailed": "還原示範卡片失敗",
     "hideOk": "已隱藏卡片。",
     "hideFailed": "隱藏卡片失敗",

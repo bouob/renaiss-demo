@@ -266,6 +266,7 @@
     "restoringDemo": "復元中…",
     "restoreDemoHint": "非表示のデモカードをすべて復元します",
     "restoreDemoOk": "デモカードを復元しました。",
+    "restoreDemoNone": "復元できる非表示のデモカードはありません。",
     "restoreDemoFailed": "デモカードの復元に失敗",
     "hideOk": "カードを非表示にしました。",
     "hideFailed": "カードの非表示に失敗",
