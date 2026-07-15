@@ -203,35 +203,57 @@ export async function unlinkWalletInventory(uid, wallet, db = adminDb) {
 }
 
 /**
- * Delete every inventory row tagged with the account's synthetic demo wallet.
+ * Flip the `hidden` flag on every inventory row tagged with the account's
+ * synthetic demo wallet. Rows are kept, not deleted, so hiding is non-destructive
+ * and reversible (unlike the old clearDemoInventory hard-delete).
  *
- * Unlike {@link unlinkWalletInventory}, this does NOT restore seeds and does NOT
- * touch the parent seed markers — the account stays "seeded" so the deleted demo
- * cards do not reappear on the next GET /meta (the seeder preserves delete-safety
- * once seededDefaultExpansionVersion is current). Personal / manually-added rows
- * and sales history are left untouched.
+ * Absent field means visible; we write `hidden: false` on restore rather than
+ * FieldValue.delete() because the test fake-db does a shallow merge and would not
+ * honour the delete sentinel — a plain boolean round-trips faithfully. Parent seed
+ * markers are left untouched (the seeder never overwrites an existing cert, so a
+ * hidden row is never un-hidden by re-seeding). Personal / manual rows and sales
+ * history are left untouched.
  *
  * @param {string} uid
+ * @param {boolean} hidden
  * @param {FirebaseFirestore.Firestore} [db]
- * @returns {Promise<{ wallet: string|null, removed: number }>}
+ * @returns {Promise<{ wallet: string|null, changed: number }>}
  */
-export async function clearDemoInventory(uid, db = adminDb) {
-  if (!db || !uid) return { wallet: null, removed: 0 };
+async function setDemoHidden(uid, hidden, db = adminDb) {
+  if (!db || !uid) return { wallet: null, changed: 0 };
   const demoWallet = syntheticWallet(uid);
   const itemsCol = db.collection(COLLECTION).doc(uid).collection('items');
   const snap = await itemsCol.get();
 
   const batch = db.batch();
-  let removed = 0;
+  let changed = 0;
   for (const doc of snap.docs) {
     const data = doc.data() || {};
     const rowW = typeof data.wallet === 'string' ? data.wallet.toLowerCase() : '';
-    if (rowW === demoWallet) {
-      batch.delete(doc.ref);
-      removed += 1;
-    }
+    if (rowW !== demoWallet) continue;
+    if ((data.hidden === true) === hidden) continue; // already in the target state
+    batch.set(doc.ref, { hidden }, { merge: true });
+    changed += 1;
   }
 
-  if (removed > 0) await batch.commit();
-  return { wallet: demoWallet, removed };
+  if (changed > 0) await batch.commit();
+  return { wallet: demoWallet, changed };
+}
+
+/**
+ * Hide every demo row. `changed` is the number of rows newly hidden (0 if all
+ * were already hidden). The bare `hidden` key is reserved for the per-item
+ * boolean on `/meta/:cert/visibility`, so bulk ops report a neutral count.
+ * @returns {Promise<{ wallet: string|null, changed: number }>}
+ */
+export async function hideDemoInventory(uid, db = adminDb) {
+  return setDemoHidden(uid, true, db);
+}
+
+/**
+ * Restore (un-hide) every demo row. `changed` is the number of rows newly shown.
+ * @returns {Promise<{ wallet: string|null, changed: number }>}
+ */
+export async function showDemoInventory(uid, db = adminDb) {
+  return setDemoHidden(uid, false, db);
 }

@@ -7,13 +7,14 @@
 import { Router } from 'express';
 import { requireAuth } from '../middleware/requireAuth.js';
 import { adminDb, adminAuth } from '../services/firebaseAdmin.js';
-import { rememberHeldCert, rememberHeldCerts, forgetHeldCert } from '../services/heldCertGate.js';
+import { rememberHeldCert, rememberHeldCerts } from '../services/heldCertGate.js';
 import { discardDemoData, checkDiscardEligibility } from '../services/demoCleanup.js';
 import {
   ensureDefaultPortfolio,
   syntheticWallet,
   unlinkWalletInventory,
-  clearDemoInventory,
+  hideDemoInventory,
+  showDemoInventory,
 } from '../services/defaultPortfolio.js';
 import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
 
@@ -240,27 +241,43 @@ router.post('/meta/unlink-wallet', requireAuth, async (req, res) => {
 });
 
 /**
- * POST /meta/clear-demo — delete every seeded demo row (rows tagged with the
- * account's synthetic wallet). Personal / manual rows and sales are left intact.
+ * POST /meta/hide-demo — hide every seeded demo row (rows tagged with the
+ * account's synthetic wallet). Non-destructive: rows are kept and can be
+ * restored via /meta/show-demo. Personal / manual rows and sales are untouched.
  */
-router.post('/meta/clear-demo', requireAuth, async (req, res) => {
+router.post('/meta/hide-demo', requireAuth, async (req, res) => {
   try {
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable' });
     }
-    const result = await clearDemoInventory(req.uid);
+    const result = await hideDemoInventory(req.uid);
     return res.json({ ok: true, ...result });
   } catch (err) {
-    console.warn(`[meta:clear-demo] ${err?.message ?? err}`);
-    return res.status(500).json({ error: 'clear_demo_failed' });
+    console.warn(`[meta:hide-demo] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'hide_demo_failed' });
+  }
+});
+
+/** POST /meta/show-demo — restore (un-hide) every demo row hidden above. */
+router.post('/meta/show-demo', requireAuth, async (req, res) => {
+  try {
+    if (!adminDb) {
+      return res.status(503).json({ error: 'store_unavailable' });
+    }
+    const result = await showDemoInventory(req.uid);
+    return res.json({ ok: true, ...result });
+  } catch (err) {
+    console.warn(`[meta:show-demo] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'show_demo_failed' });
   }
 });
 
 /**
- * DELETE /meta/:cert — remove a single holding the user owns (demo or personal).
- * Demo deletes stick: the seeder does not re-add certs the user removed.
+ * POST /meta/:cert/visibility — hide or restore a single holding the user owns.
+ * Body: { hidden: boolean }. Unlike a delete, the row stays: the cert is still
+ * owned, so /related /insight remain available and held-cert quota is kept fresh.
  */
-router.delete('/meta/:cert', requireAuth, async (req, res) => {
+router.post('/meta/:cert/visibility', requireAuth, async (req, res) => {
   try {
     if (!adminDb) {
       return res.status(503).json({ error: 'store_unavailable' });
@@ -269,17 +286,19 @@ router.delete('/meta/:cert', requireAuth, async (req, res) => {
     if (!CERT_SHAPE.test(cert)) {
       return res.status(400).json({ error: 'invalid_cert' });
     }
+    const hidden = req.body?.hidden === true; // explicit boolean; default false
     const ref = itemRef(req.uid, cert);
     const existing = await ref.get();
-    const removed = existing.exists ? 1 : 0;
-    if (removed) await ref.delete();
-    // Drop the /related quota allowance for a cert the user no longer holds,
-    // mirroring how PUT/GET remember held certs.
-    forgetHeldCert(cert);
-    return res.json({ ok: true, removed });
+    if (!existing.exists) {
+      return res.status(404).json({ error: 'not_found' });
+    }
+    await ref.set({ hidden, updatedAt: new Date().toISOString() }, { merge: true });
+    // Card is still owned (just hidden) — keep the /related quota allowance.
+    rememberHeldCert(cert);
+    return res.json({ ok: true, cert, hidden });
   } catch (err) {
-    console.warn(`[meta:delete] ${err?.message ?? err}`);
-    return res.status(500).json({ error: 'meta_delete_failed' });
+    console.warn(`[meta:visibility] ${err?.message ?? err}`);
+    return res.status(500).json({ error: 'meta_visibility_failed' });
   }
 });
 

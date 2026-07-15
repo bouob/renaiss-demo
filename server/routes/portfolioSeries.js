@@ -37,8 +37,12 @@ async function realLoadHoldings(uid, wallet) {
   if (!adminDb || !wallet) return [];
   const snap = await adminDb.collection(COLLECTION).doc(uid).collection('items').get();
   const held = snap.docs
-    .map((d) => ({ cert: d.data()?.cert || d.id, wallet: d.data()?.wallet }))
-    .filter((row) => (typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '') === wallet)
+    .map((d) => ({ cert: d.data()?.cert || d.id, wallet: d.data()?.wallet, hidden: d.data()?.hidden }))
+    // Hidden rows are excluded from the chart, matching how the inventory list
+    // and dashboard movers drop them — a card the merchant hid must not keep
+    // contributing to the portfolio-series value.
+    .filter((row) => row.hidden !== true
+      && (typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '') === wallet)
     .map((row) => row.cert);
   if (held.length > MAX_HOLDINGS) {
     // The reported coverage.total counts only what we enriched, so say so.

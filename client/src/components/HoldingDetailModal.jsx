@@ -9,6 +9,7 @@ import { getCachedRelated, setCachedRelated } from '../lib/relatedCache.js';
 import { clampMoneyInput, parseMoney, MONEY_INPUT_ATTRS } from '../lib/moneyInput.js';
 import { formatUsdCents, formatUsd, formatUsdSigned } from '../lib/money.js';
 import { adjacentNotice } from '../lib/adjacent.js';
+import { isHiddenItem } from '../lib/demoInventory.js';
 
 /**
  * Inventory card detail — cost/pricing/notes/status + lazy AI verdict.
@@ -20,7 +21,8 @@ export default function HoldingDetailModal({
   onSaveCost,
   onSaveDetails,
   onUpdateStatus,
-  onDelete,
+  onToggleHidden,
+  toggleBusy = false,
   getToken,
   user,
   wallet,
@@ -561,13 +563,14 @@ export default function HoldingDetailModal({
                 </div>
 
                 <div className="modal-actions holding-detail-save-row" style={{ marginTop: '0.6rem' }}>
-                  {onDelete && (
+                  {onToggleHidden && (
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm holding-detail-delete"
-                      onClick={() => onDelete(cert)}
+                      className="btn btn-ghost btn-sm holding-detail-hide"
+                      disabled={toggleBusy}
+                      onClick={() => onToggleHidden(cert, !isHiddenItem(item))}
                     >
-                      {t('detail.delete')}
+                      {isHiddenItem(item) ? t('detail.restore') : t('detail.hide')}
                     </button>
                   )}
                   <button type="button" className="btn btn-ghost btn-sm holding-detail-reset" onClick={resetToSnapshot}>

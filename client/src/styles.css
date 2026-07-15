@@ -2676,7 +2676,7 @@ code {
 .holding-detail-save-row {
   justify-content: space-between;
 }
-.holding-detail-delete,
+.holding-detail-hide,
 .holding-detail-reset,
 .holding-detail-save {
   flex: 1 1 0;
@@ -2684,16 +2684,10 @@ code {
   min-height: 3.15rem;
   padding: 0.9rem 0.95rem;
 }
-.holding-detail-delete {
-  color: var(--clear, #ff5c7a);
-  border-color: rgba(255, 92, 122, 0.4);
-}
-.holding-detail-delete:hover {
-  background: rgba(255, 92, 122, 0.1);
-  border-color: rgba(255, 92, 122, 0.6);
-}
+/* Hide is reversible, so it keeps the neutral ghost-button look (no destructive
+   red) — the sizing rule above is shared with reset/save. */
 @media (max-width: 720px) {
-  .holding-detail-delete,
+  .holding-detail-hide,
   .holding-detail-reset,
   .holding-detail-save {
     width: 100%;

@@ -2,6 +2,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isDemoItem,
+  isHiddenItem,
   filterLinkedInventory,
   normalizeWalletAddr,
 } from '../src/lib/demoInventory.js';
@@ -15,6 +16,22 @@ describe('isDemoItem', () => {
     assert.equal(isDemoItem({ wallet: REAL_W, cert: 'PSA1' }, DEMO_W), false);
     assert.equal(isDemoItem({ wallet: DEMO_W }, null), false);
     assert.equal(isDemoItem({}, DEMO_W), false);
+  });
+});
+
+describe('isHiddenItem', () => {
+  it('is true only for a strict boolean true (absent/false/junk are visible)', () => {
+    // The strict === true contract is load-bearing: every hidden-filter path
+    // (inventory list, portfolio stats, dashboard movers) relies on it, so a
+    // stray truthy value like the string 'false' must NOT read as hidden.
+    assert.equal(isHiddenItem({ hidden: true }), true);
+    assert.equal(isHiddenItem({ hidden: false }), false);
+    assert.equal(isHiddenItem({}), false);
+    assert.equal(isHiddenItem({ hidden: undefined }), false);
+    assert.equal(isHiddenItem({ hidden: 'false' }), false);
+    assert.equal(isHiddenItem({ hidden: 1 }), false);
+    assert.equal(isHiddenItem(null), false);
+    assert.equal(isHiddenItem(undefined), false);
   });
 });
 

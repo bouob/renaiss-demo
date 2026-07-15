@@ -18,8 +18,9 @@ import {
   fetchSales,
   bulkSales,
   unlinkWallet,
-  deleteMeta,
-  clearDemoInventory,
+  setMetaVisibility,
+  hideDemoInventory,
+  showDemoInventory,
 } from '../lib/inventoryApi.js';
 import { fetchMovers } from '../lib/moversApi.js';
 import {
@@ -43,6 +44,7 @@ import {
 import {
   filterLinkedInventory,
   isDemoItem,
+  isHiddenItem,
 } from '../lib/demoInventory.js';
 import {
   collectSalesWallets,
@@ -113,7 +115,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
   const [defaultWallet, setDefaultWallet] = useState(null);
   const [linkedWallet, setLinkedWallet] = useState(() => readLastWallet());
   const [unlinkBusy, setUnlinkBusy] = useState(false);
-  const [clearBusy, setClearBusy] = useState(false);
+  const [hideBusy, setHideBusy] = useState(false);
+  const [showBusy, setShowBusy] = useState(false);
+  const [showHidden, setShowHidden] = useState(false);
+  const [toggleBusy, setToggleBusy] = useState(false);
 
   useEffect(() => {
     try {
@@ -277,6 +282,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     return {
       ...it,
       isDemo: isDemoItem(it, defaultWallet),
+      isHidden: isHiddenItem(it),
       alphaPct30d,
       // A merchant's saved override wins; otherwise fall back to the rules engine.
       decision: it.decision ?? detail.decision ?? 'hold',
@@ -294,10 +300,17 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     });
   }, [visibleItems, movers, defaultWallet, sales]);
 
+  // Hidden rows stay in `enriched` (so they can be counted and revealed via the
+  // Show-hidden toggle without a refetch), but drop out of the visible list.
+  const displayItems = useMemo(
+    () => (showHidden ? enriched : enriched.filter((it) => !it.isHidden)),
+    [enriched, showHidden],
+  );
+
   const filtered = useMemo(() => {
-    if (filter === 'all') return enriched;
-    return enriched.filter((it) => (it.decision || 'hold') === filter);
-  }, [enriched, filter]);
+    if (filter === 'all') return displayItems;
+    return displayItems.filter((it) => (it.decision || 'hold') === filter);
+  }, [displayItems, filter]);
 
   const sorted = useMemo(
     () => sortInventoryItems(filtered, sortKey, sortDir),
@@ -325,7 +338,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     let fmv = 0;
     let cost = 0;
     let withCost = 0;
+    let n = 0;
     for (const it of enriched) {
+      if (it.isHidden) continue; // hidden rows do not count toward FMV/PnL/n
+      n += 1;
       if (Number.isFinite(it.fmvUsd)) fmv += it.fmvUsd;
       if (Number.isFinite(it.cost)) {
         cost += it.cost;
@@ -333,7 +349,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       }
     }
     const pnl = withCost > 0 && fmv > 0 ? fmv - cost : null;
-    return { fmv, cost, pnl, withCost, n: enriched.length };
+    return { fmv, cost, pnl, withCost, n };
   }, [enriched]);
 
   async function handleUnlinkWallet() {
@@ -362,44 +378,71 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     }
   }
 
-  const demoCount = useMemo(() => enriched.filter((it) => it.isDemo).length, [enriched]);
+  // Only visible demo rows drive the Hide-demo button; already-hidden demos don't.
+  const demoCount = useMemo(
+    () => enriched.filter((it) => it.isDemo && !it.isHidden).length,
+    [enriched],
+  );
+  // All hidden rows (demo + personal), for the Show-hidden toggle and empty hint.
+  const hiddenCount = useMemo(() => enriched.filter((it) => it.isHidden).length, [enriched]);
+  // Only hidden DEMO rows — the "Restore demo cards" bulk button restores just
+  // these, so gating on the combined hiddenCount would surface a no-op button for
+  // a user whose only hidden card is a personal one.
+  const hiddenDemoCount = useMemo(
+    () => enriched.filter((it) => it.isDemo && it.isHidden).length,
+    [enriched],
+  );
 
-  async function handleClearDemo() {
+  async function handleHideDemo() {
+    // Non-destructive: rows are kept and restorable, so no confirm prompt.
     if (!user || demoCount === 0) return;
-    const ok = typeof window !== 'undefined'
-      ? window.confirm(t('inventory.clearDemoConfirm', { count: demoCount }))
-      : true;
-    if (!ok) return;
-    setClearBusy(true);
+    setHideBusy(true);
     setError(null);
     try {
-      await withAuth((token) => clearDemoInventory({ authToken: token }));
-      setCsvNote(t('inventory.clearDemoOk'));
+      await withAuth((token) => hideDemoInventory({ authToken: token }));
       await loadInventory();
+      setCsvNote(t('inventory.hideDemoOk'));
     } catch (err) {
-      setError(err?.message ?? t('inventory.clearDemoFailed'));
+      setError(err?.message ?? t('inventory.hideDemoFailed'));
     } finally {
-      setClearBusy(false);
+      setHideBusy(false);
     }
   }
 
-  async function handleDeleteHolding(cert) {
-    // Inventory is only populated for a signed-in user (loadInventory clears it
-    // otherwise), so this handler is never reachable while signed out — the
-    // server delete is unconditional.
-    if (!cert || !user) return;
-    const ok = typeof window !== 'undefined'
-      ? window.confirm(t('detail.deleteConfirm'))
-      : true;
-    if (!ok) return;
+  async function handleShowDemo() {
+    if (!user || hiddenDemoCount === 0) return;
+    setShowBusy(true);
     setError(null);
     try {
-      await withAuth((token) => deleteMeta(cert, { authToken: token }));
-      setItems((prev) => prev.filter((i) => (i.cert || i.id) !== cert));
-      setSelectedCert(null);
-      setCsvNote(t('inventory.deleteOk'));
+      const result = await withAuth((token) => showDemoInventory({ authToken: token }));
+      await loadInventory();
+      // Report the real outcome: `changed === 0` means nothing was restored.
+      setCsvNote(t(result?.changed > 0 ? 'inventory.restoreDemoOk' : 'inventory.restoreDemoNone'));
     } catch (err) {
-      setError(err?.message ?? t('inventory.deleteFailed'));
+      setError(err?.message ?? t('inventory.restoreDemoFailed'));
+    } finally {
+      setShowBusy(false);
+    }
+  }
+
+  async function handleToggleHidden(cert, nextHidden) {
+    // Inventory is only populated for a signed-in user (loadInventory clears it
+    // otherwise), so this handler is never reachable while signed out.
+    if (!cert || !user || toggleBusy) return; // ignore re-entrant clicks
+    setToggleBusy(true);
+    setError(null);
+    try {
+      await withAuth((token) => setMetaVisibility(cert, nextHidden, { authToken: token }));
+      // Flip the flag rather than dropping the row, so the modal can stay open
+      // and the merchant can immediately undo (Hide ⇄ Restore).
+      setItems((prev) => prev.map((i) => (
+        (i.cert || i.id) === cert ? { ...i, hidden: nextHidden } : i
+      )));
+      setCsvNote(t(nextHidden ? 'inventory.hideOk' : 'inventory.restoreOk'));
+    } catch (err) {
+      setError(err?.message ?? t(nextHidden ? 'inventory.hideFailed' : 'inventory.restoreFailed'));
+    } finally {
+      setToggleBusy(false);
     }
   }
 
@@ -898,11 +941,34 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                   <button
                     type="button"
                     className="btn btn-ghost inventory-action-btn"
-                    disabled={clearBusy}
-                    onClick={handleClearDemo}
-                    title={t('inventory.clearDemoHint')}
+                    disabled={hideBusy}
+                    onClick={handleHideDemo}
+                    title={t('inventory.hideDemoHint')}
                   >
-                    {clearBusy ? t('inventory.clearingDemo') : t('inventory.clearDemo')}
+                    {hideBusy ? t('inventory.hidingDemo') : t('inventory.hideDemo')}
+                  </button>
+                ) : null}
+                {user && hiddenCount > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost inventory-action-btn"
+                    aria-pressed={showHidden}
+                    onClick={() => setShowHidden((v) => !v)}
+                  >
+                    {showHidden
+                      ? t('inventory.hideHidden')
+                      : t('inventory.showHidden', { count: hiddenCount })}
+                  </button>
+                ) : null}
+                {user && hiddenDemoCount > 0 ? (
+                  <button
+                    type="button"
+                    className="btn btn-ghost inventory-action-btn"
+                    disabled={showBusy}
+                    onClick={handleShowDemo}
+                    title={t('inventory.restoreDemoHint')}
+                  >
+                    {showBusy ? t('inventory.restoringDemo') : t('inventory.restoreDemo')}
                   </button>
                 ) : null}
                 {linkedWallet ? (
@@ -927,7 +993,11 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         {enriched.length === 0 ? (
           <div className="empty">{t('inventory.emptyInventory')}</div>
         ) : sorted.length === 0 ? (
-          <div className="empty">{t('inventory.filterEmpty')}</div>
+          filter === 'all' && hiddenCount > 0 && !showHidden ? (
+            <div className="empty">{t('inventory.hiddenEmptyHint', { count: hiddenCount })}</div>
+          ) : (
+            <div className="empty">{t('inventory.filterEmpty')}</div>
+          )
         ) : (
           <>
             {viewMode === 'grid' ? (
@@ -1084,7 +1154,8 @@ export default function Inventory({ user, getToken, firebaseOk }) {
           onSaveCost={saveCost}
           onSaveDetails={saveDetailsGuarded}
           onUpdateStatus={updateStatus}
-          onDelete={handleDeleteHolding}
+          onToggleHidden={handleToggleHidden}
+          toggleBusy={toggleBusy}
         />
       )}
 
