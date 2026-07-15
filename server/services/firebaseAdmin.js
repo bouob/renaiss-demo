@@ -39,3 +39,17 @@ function init() {
 }
 
 init();
+
+/**
+ * Test-only seam: inject fake Admin SDK handles so uid-scoped route tests can
+ * exercise auth-gated paths without real credentials. Mirrors the
+ * `__resetForTest` seams in heldCertGate / renaissOsIndex. Because `adminDb`
+ * and `adminAuth` are live ESM bindings, reassigning them here updates every
+ * importer (routes/meta.js, middleware/requireAuth.js). Pass nulls to restore
+ * the fail-open default.
+ * @param {{ db?: unknown, auth?: unknown }} [handles]
+ */
+export function __setAdminForTest({ db = null, auth = null } = {}) {
+  adminDb = db;
+  adminAuth = auth;
+}
