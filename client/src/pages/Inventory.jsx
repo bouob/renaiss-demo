@@ -139,18 +139,20 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     loadMovers();
   }, [loadMovers]);
 
+  // Returns true when the refresh succeeded, false otherwise, so callers that
+  // just mutated inventory can decide whether to claim success.
   const loadInventory = useCallback(async () => {
     if (!user) {
       setItems([]);
       setSales([]);
       setSalesSummary(null);
       setDefaultWallet(null);
-      return;
+      return false;
     }
     setLoading(true); setError(null);
     try {
       const token = await getToken();
-      if (!token) { setItems([]); return; }
+      if (!token) { setItems([]); return false; }
       const metaRes = await fetchMeta({ authToken: token });
       const nextItems = Array.isArray(metaRes?.items) ? metaRes.items : [];
       const demoW = typeof metaRes?.defaultWallet === 'string' ? metaRes.defaultWallet : null;
@@ -182,9 +184,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
         setSales(merged.sales);
         setSalesSummary(merged.summary);
       }
+      return true;
     } catch (err) {
+      // Preserve the last-known inventory instead of wiping it to []. A transient
+      // refetch failure must not blank a list the user is working with — and,
+      // after an optimistic hide/restore, must not empty `items` and thereby
+      // force an open HoldingDetailModal (keyed on `selected`) to unmount.
       setError(err?.message ?? t('inventory.loadFailed'));
-      setItems([]); setSales([]); setSalesSummary(null);
+      return false;
     } finally { setLoading(false); }
   }, [user, getToken, t]);
 
@@ -400,8 +407,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setError(null);
     try {
       await withAuth((token) => hideDemoInventory({ authToken: token }));
-      await loadInventory();
-      setCsvNote(t('inventory.hideDemoOk'));
+      // Claim success only once the refresh confirms it; a failed reload already
+      // surfaces loadFailed, so don't stack a success toast on top of it.
+      if (await loadInventory()) setCsvNote(t('inventory.hideDemoOk'));
     } catch (err) {
       setError(err?.message ?? t('inventory.hideDemoFailed'));
     } finally {
@@ -415,9 +423,10 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setError(null);
     try {
       const result = await withAuth((token) => showDemoInventory({ authToken: token }));
-      await loadInventory();
-      // Report the real outcome: `changed === 0` means nothing was restored.
-      setCsvNote(t(result?.changed > 0 ? 'inventory.restoreDemoOk' : 'inventory.restoreDemoNone'));
+      if (await loadInventory()) {
+        // Report the real outcome: `changed === 0` means nothing was restored.
+        setCsvNote(t(result?.changed > 0 ? 'inventory.restoreDemoOk' : 'inventory.restoreDemoNone'));
+      }
     } catch (err) {
       setError(err?.message ?? t('inventory.restoreDemoFailed'));
     } finally {
@@ -433,12 +442,18 @@ export default function Inventory({ user, getToken, firebaseOk }) {
     setError(null);
     try {
       await withAuth((token) => setMetaVisibility(cert, nextHidden, { authToken: token }));
-      // Flip the flag rather than dropping the row, so the modal can stay open
-      // and the merchant can immediately undo (Hide ⇄ Restore).
+      // Optimistic flip for instant feedback: the row re-filters right away via the
+      // items → enriched → displayItems memo chain, and the modal stays open (GET
+      // /meta still returns hidden rows, so `selected` resolves) so undo works.
       setItems((prev) => prev.map((i) => (
         (i.cert || i.id) === cert ? { ...i, hidden: nextHidden } : i
       )));
-      setCsvNote(t(nextHidden ? 'inventory.hideOk' : 'inventory.restoreOk'));
+      // Reconcile the optimistic guess with server truth and refresh server-derived
+      // data (movers/sales/defaultWallet). Claim success only once the refresh
+      // confirms it, so a transient reload failure doesn't stack a toast on loadFailed.
+      if (await loadInventory()) {
+        setCsvNote(t(nextHidden ? 'inventory.hideOk' : 'inventory.restoreOk'));
+      }
     } catch (err) {
       setError(err?.message ?? t(nextHidden ? 'inventory.hideFailed' : 'inventory.restoreFailed'));
     } finally {
@@ -951,16 +966,14 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                 {user && hiddenCount > 0 ? (
                   <button
                     type="button"
-                    className="btn btn-ghost inventory-action-btn"
+                    className={`btn ${showHidden ? 'btn-primary' : 'btn-ghost'} inventory-action-btn`}
                     aria-pressed={showHidden}
                     onClick={() => setShowHidden((v) => !v)}
                   >
-                    {showHidden
-                      ? t('inventory.hideHidden')
-                      : t('inventory.showHidden', { count: hiddenCount })}
+                    {t('inventory.showHidden', { count: hiddenCount })}
                   </button>
                 ) : null}
-                {user && hiddenDemoCount > 0 ? (
+                {user && showHidden && hiddenDemoCount > 0 ? (
                   <button
                     type="button"
                     className="btn btn-ghost inventory-action-btn"

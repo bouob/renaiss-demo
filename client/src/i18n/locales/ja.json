@@ -261,7 +261,6 @@
     "hideDemoOk": "デモカードを非表示にしました。",
     "hideDemoFailed": "デモカードの非表示に失敗",
     "showHidden": "非表示を表示（{{count}}）",
-    "hideHidden": "非表示を隠す",
     "restoreDemo": "デモカードを復元",
     "restoringDemo": "復元中…",
     "restoreDemoHint": "非表示のデモカードをすべて復元します",

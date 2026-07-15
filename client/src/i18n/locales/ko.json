@@ -263,7 +263,6 @@
     "hideDemoOk": "데모 카드를 숨겼습니다.",
     "hideDemoFailed": "데모 카드 숨기기 실패",
     "showHidden": "숨긴 항목 보기 ({{count}})",
-    "hideHidden": "숨긴 항목 접기",
     "restoreDemo": "데모 카드 복원",
     "restoringDemo": "복원 중…",
     "restoreDemoHint": "숨긴 데모 카드를 모두 복원합니다",

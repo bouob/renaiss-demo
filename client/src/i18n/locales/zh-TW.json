@@ -261,7 +261,6 @@
     "hideDemoOk": "已隱藏示範卡片。",
     "hideDemoFailed": "隱藏示範卡片失敗",
     "showHidden": "顯示隱藏（{{count}}）",
-    "hideHidden": "收合隱藏卡片",
     "restoreDemo": "還原示範卡片",
     "restoringDemo": "還原中…",
     "restoreDemoHint": "還原所有隱藏的示範卡片",
