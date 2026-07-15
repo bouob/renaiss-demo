@@ -87,13 +87,6 @@ const FEATURE_BUDGETS = {
 // prefix + digits (e.g. PSA126233443). Anything else (path segments, `..`,
 // oversized junk) never reaches the URL.
 const CERT_SHAPE = /^[A-Za-z]{0,4}\d{1,20}$/;
-
-// The value a graded 404 resolves to. Shared frozen instance so the payload
-// layer can recognise a 404-miss by identity (and skip persisting it) while a
-// 200 {found:false} — a distinct object — still caches. `reason: 'not_found'`
-// is locally minted, distinct from upstream's own 200-miss reasons
-// (e.g. 'not_in_index'); downstream only reads `found`, never switches on it.
-const GRADED_NOT_FOUND = Object.freeze({ found: false, reason: 'not_found' });
 // href is persisted to Firestore and later opened by the client against the
 // index origin — only a plain relative path survives ingest (a value like
 // `@evil.com/x` would URL-parse the origin into userinfo: open redirect).
@@ -263,17 +256,11 @@ function requestOptions() {
  * @param {string} label - identifies the caller in warn logs (may embed the
  *   already-validated input, e.g. `getGradedFmv(PSA1)`).
  * @param {string} [feature] - P0-4 telemetry tag, see FEATURE_BUDGETS.
- * @param {object} [opts]
- * @param {unknown} [opts.notFoundValue] - what a 404 resolves to. A 404 is a
- *   *determinate* answer ("upstream does not carry this"), not a failure, so an
- *   endpoint whose miss is meaningful passes the payload it wants back. Left
- *   undefined, a 404 keeps folding into null with every other failure — correct
- *   for endpoints (indices, series) where a 404 means the path itself is wrong.
- * @returns {Promise<unknown|null>} parsed JSON body, `opts.notFoundValue` on a
- *   404 when given, or null on any failure mode (disabled/breaker open/quota
- *   exhausted/non-2xx/timeout/network error/abandoned 429). Never throws.
+ * @returns {Promise<unknown|null>} parsed JSON body, or null on any failure
+ *   mode (disabled/breaker open/quota exhausted/non-2xx/timeout/network
+ *   error/abandoned 429). Never throws.
  */
-async function requestUpstreamJson(path, label, feature, { notFoundValue } = {}) {
+async function requestUpstreamJson(path, label, feature) {
   if (!KEYS_CONFIGURED) return null;
   if (breakerOpen()) return null;
   if (quotaExhausted()) return null;
@@ -308,16 +295,6 @@ async function requestUpstreamJson(path, label, feature, { notFoundValue } = {})
 
     const remaining = noteRateLimitRemaining(res.headers);
     logFeatureTelemetry(feature, remaining);
-
-    if (res.status === 404 && notFoundValue !== undefined) {
-      // Upstream answered "no such record" — a determinate miss for the caller,
-      // so it gets a real value instead of the transient null. But it is NOT a
-      // breaker success: a systemic 404 (path moved / key revoked) flapping with
-      // 5xx would otherwise keep zeroing the failure count and never trip the
-      // breaker. Stay neutral — neither noteSuccess nor noteFailure (a 404 is
-      // < 500). The caller must also skip persisting this (see getGradedLookupPayload).
-      return notFoundValue;
-    }
 
     if (!res.ok) {
       if (res.status >= 500) noteFailure(`HTTP ${res.status}`);
@@ -395,17 +372,8 @@ function getGradedLookupPayload(cert, feature) {
       `/v1/graded/${encodeURIComponent(key)}`,
       `getGradedLookup(${key})`,
       feature,
-      // A cert the Index does not track is a real answer, whether it arrives as
-      // 200 `{found:false}` or as a 404 — both must read the same downstream, so
-      // adjacent-cert suggestions do not treat an untracked neighbor as a
-      // transient "lookup failed" (a null brief).
-      { notFoundValue: GRADED_NOT_FOUND },
     );
-    // Persist a 200 miss, but NEVER a 404: a 200 {found:false} is a durable
-    // per-cert fact, whereas a 404 can be systemic (path moved / key revoked)
-    // and would freeze every probed cert as "not tracked" for the full 8h TTL.
-    // Identity check, not shape — only requestUpstreamJson returns this exact ref.
-    if (data && data !== GRADED_NOT_FOUND) await gradedCacheWrite(key, data);
+    if (data) await gradedCacheWrite(key, data);
     return data;
   })();
   gradedLookupInFlight.set(key, promise);
