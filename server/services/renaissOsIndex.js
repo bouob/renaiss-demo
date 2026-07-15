@@ -87,6 +87,13 @@ const FEATURE_BUDGETS = {
 // prefix + digits (e.g. PSA126233443). Anything else (path segments, `..`,
 // oversized junk) never reaches the URL.
 const CERT_SHAPE = /^[A-Za-z]{0,4}\d{1,20}$/;
+
+// The value a graded 404 resolves to. Shared frozen instance so the payload
+// layer can recognise a 404-miss by identity (and skip persisting it) while a
+// 200 {found:false} — a distinct object — still caches. `reason: 'not_found'`
+// is locally minted, distinct from upstream's own 200-miss reasons
+// (e.g. 'not_in_index'); downstream only reads `found`, never switches on it.
+const GRADED_NOT_FOUND = Object.freeze({ found: false, reason: 'not_found' });
 // href is persisted to Firestore and later opened by the client against the
 // index origin — only a plain relative path survives ingest (a value like
 // `@evil.com/x` would URL-parse the origin into userinfo: open redirect).
@@ -303,11 +310,12 @@ async function requestUpstreamJson(path, label, feature, { notFoundValue } = {})
     logFeatureTelemetry(feature, remaining);
 
     if (res.status === 404 && notFoundValue !== undefined) {
-      // Upstream answered, and the answer is "no such record". That is a
-      // success for the breaker (it proves the service is up) and a cacheable
-      // negative for the caller — folding it into null would both report an
-      // outage and re-ask upstream for the same miss forever.
-      noteSuccess();
+      // Upstream answered "no such record" — a determinate miss for the caller,
+      // so it gets a real value instead of the transient null. But it is NOT a
+      // breaker success: a systemic 404 (path moved / key revoked) flapping with
+      // 5xx would otherwise keep zeroing the failure count and never trip the
+      // breaker. Stay neutral — neither noteSuccess nor noteFailure (a 404 is
+      // < 500). The caller must also skip persisting this (see getGradedLookupPayload).
       return notFoundValue;
     }
 
@@ -388,13 +396,16 @@ function getGradedLookupPayload(cert, feature) {
       `getGradedLookup(${key})`,
       feature,
       // A cert the Index does not track is a real answer, whether it arrives as
-      // 200 `{found:false}` or as a 404. Both must read the same downstream:
-      // adjacent-cert suggestions treat a null brief as a transient upstream
-      // failure, so a 404 folded into null would surface an untracked neighbor
-      // as "lookup failed" — and never cache the miss.
-      { notFoundValue: { found: false, reason: 'not_found' } },
+      // 200 `{found:false}` or as a 404 — both must read the same downstream, so
+      // adjacent-cert suggestions do not treat an untracked neighbor as a
+      // transient "lookup failed" (a null brief).
+      { notFoundValue: GRADED_NOT_FOUND },
     );
-    if (data) await gradedCacheWrite(key, data);
+    // Persist a 200 miss, but NEVER a 404: a 200 {found:false} is a durable
+    // per-cert fact, whereas a 404 can be systemic (path moved / key revoked)
+    // and would freeze every probed cert as "not tracked" for the full 8h TTL.
+    // Identity check, not shape — only requestUpstreamJson returns this exact ref.
+    if (data && data !== GRADED_NOT_FOUND) await gradedCacheWrite(key, data);
     return data;
   })();
   gradedLookupInFlight.set(key, promise);
