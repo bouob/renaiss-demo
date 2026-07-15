@@ -20,7 +20,7 @@ export default function HoldingDetailModal({
   onSaveCost,
   onSaveDetails,
   onUpdateStatus,
-  onDelete,
+  onToggleHidden,
   getToken,
   user,
   wallet,
@@ -561,13 +561,13 @@ export default function HoldingDetailModal({
                 </div>
 
                 <div className="modal-actions holding-detail-save-row" style={{ marginTop: '0.6rem' }}>
-                  {onDelete && (
+                  {onToggleHidden && (
                     <button
                       type="button"
-                      className="btn btn-ghost btn-sm holding-detail-delete"
-                      onClick={() => onDelete(cert)}
+                      className="btn btn-ghost btn-sm holding-detail-hide"
+                      onClick={() => onToggleHidden(cert, !item.hidden)}
                     >
-                      {t('detail.delete')}
+                      {item.hidden ? t('detail.restore') : t('detail.hide')}
                     </button>
                   )}
                   <button type="button" className="btn btn-ghost btn-sm holding-detail-reset" onClick={resetToSnapshot}>

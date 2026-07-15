@@ -171,9 +171,11 @@ describe('GET /related/:cert', () => {
     assert.equal(body.degraded, true);
   });
 
-  it('re-gates a cert once it is forgotten (e.g. the holding was deleted)', async () => {
-    // DELETE /meta/:cert calls forgetHeldCert so a removed card can no longer
-    // spend the shared Renaiss quota via /related.
+  it('re-gates a cert once it is forgotten', async () => {
+    // forgetHeldCert is the gate mechanism: a cert dropped from the allowlist can
+    // no longer spend the shared Renaiss quota via /related. (Hiding a card does
+    // NOT forget it — the row is kept and still owned — so this is a unit-level
+    // check of the gate itself, no longer wired to a delete route.)
     rememberHeldCert(CERT);
     forgetHeldCert(CERT);
     const calls = countUpstreamCalls();

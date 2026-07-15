@@ -25,6 +25,16 @@ export function isDemoItem(item, defaultWallet) {
 }
 
 /**
+ * Whether a row is hidden (merchant hid it via the inventory hide/restore
+ * controls). Absent field means visible. Kept as a strict `=== true` check so
+ * `false`/`undefined` behave identically.
+ * @param {object|null|undefined} item
+ */
+export function isHiddenItem(item) {
+  return item?.hidden === true;
+}
+
+/**
  * Visible inventory under optional linked wallet.
  *
  * - No link: all rows (demo + personal + manual).

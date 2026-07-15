@@ -7,7 +7,7 @@ import { RENAISS_INDEX_BASE_URL, resolveIndexUrl, openIndexPage } from '../lib/r
 import { linkDokipokiMentions } from '../lib/dokipokiLinks.js';
 import { readLastWallet } from '../lib/lastWallet.js';
 import { formatUsdCents } from '../lib/money.js';
-import { filterLinkedInventory } from '../lib/demoInventory.js';
+import { filterLinkedInventory, isHiddenItem } from '../lib/demoInventory.js';
 import {
   classifyMerchantDecisionDetail,
   DEMO_PROMOTE_ALPHA_BY_CERT,
@@ -113,7 +113,9 @@ export default function Dashboard({ user, getToken }) {
     ? t('dashboard.moversEmptyNoInventory')
     : t('dashboard.moversEmptySignedOut');
   const inventoryMovers = useMemo(() => {
-    const visibleItems = filterLinkedInventory(inventoryItems, readLastWallet(), defaultWallet);
+    // Hidden rows never appear in the movers panel (no reveal toggle here).
+    const visibleItems = filterLinkedInventory(inventoryItems, readLastWallet(), defaultWallet)
+      .filter((it) => !isHiddenItem(it));
 
     // Use the same alpha precedence and classification as Inventory. A market
     // mover augments a holding with market fields, but is not required for the
