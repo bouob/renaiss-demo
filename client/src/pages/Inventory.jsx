@@ -984,7 +984,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                     {showBusy ? t('inventory.restoringDemo') : t('inventory.restoreDemo')}
                   </button>
                 ) : null}
-                {linkedWallet ? (
+                {user && linkedWallet ? (
                   <button
                     type="button"
                     className="btn btn-ghost inventory-action-btn"
