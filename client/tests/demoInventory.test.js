@@ -74,9 +74,23 @@ describe('filterLinkedInventory', () => {
 describe('recoverLinkedWallet', () => {
   const REAL_W2 = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 
-  it('keeps a stored real wallet', () => {
-    const items = [{ cert: 'A', wallet: DEMO_W }];
+  it('keeps a stored real wallet that still backs a row', () => {
+    const items = [
+      { cert: 'A', wallet: DEMO_W },
+      { cert: 'C', wallet: REAL_W },
+    ];
     assert.equal(recoverLinkedWallet(items, DEMO_W, REAL_W), REAL_W);
+  });
+
+  it('drops a stored wallet once no row belongs to it (post-unlink)', () => {
+    // After unlink the personal rows are gone and only demo rows remain, but a
+    // stale localStorage entry may still name the old wallet. It must NOT keep
+    // the account reading as "linked" (chip + Unlink button) with no holdings.
+    const items = [
+      { cert: 'A', wallet: DEMO_W },
+      { cert: 'B', wallet: DEMO_W },
+    ];
+    assert.equal(recoverLinkedWallet(items, DEMO_W, REAL_W), '');
   });
 
   it('never returns the synthetic demo wallet, even when stored', () => {
