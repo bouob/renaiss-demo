@@ -220,7 +220,7 @@ export default function Dashboard({ user, getToken }) {
           <div className="dashboard-layout">
             <div className="dashboard-left-column">
               <section className="glass-card dashboard-index-card">
-                <BenchmarkPanel index={index} user={user} getToken={getToken} dateLocale={dateLocale} />
+                <BenchmarkPanel index={index} user={user} getToken={getToken} dateLocale={dateLocale} fallbackWallet={defaultWallet} />
               </section>
 
               <section className="glass-card dashboard-top-card">

@@ -35,6 +35,30 @@ export function isHiddenItem(item) {
 }
 
 /**
+ * Best-effort linked-wallet recovery from server data. The stored wallet wins
+ * when it is a real one; otherwise fall back to the first non-demo wallet on
+ * the item rows. The synthetic demo wallet is never a linked wallet — it is a
+ * well-formed 0x address, so without this exclusion a demo-only account reads
+ * as "linked" and grows an Unlink button that deletes-and-reseeds its own
+ * demo cards (a no-op that looks like a broken unlink).
+ *
+ * @param {Array<object>} items
+ * @param {string|null|undefined} defaultWallet - synthetic demo wallet from GET /meta
+ * @param {string|null|undefined} lastWallet - wallet from localStorage, may be stale
+ * @returns {string} lowercased linked wallet, or '' when none
+ */
+export function recoverLinkedWallet(items, defaultWallet, lastWallet) {
+  const demoW = normalizeWalletAddr(defaultWallet);
+  const last = normalizeWalletAddr(lastWallet);
+  if (last && last !== demoW) return last;
+  for (const it of Array.isArray(items) ? items : []) {
+    const w = normalizeWalletAddr(it?.wallet);
+    if (w && w !== demoW) return w;
+  }
+  return '';
+}
+
+/**
  * Visible inventory under optional linked wallet.
  *
  * - No link: all rows (demo + personal + manual).
