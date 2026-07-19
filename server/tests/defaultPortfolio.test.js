@@ -332,6 +332,39 @@ describe('restoreMissingDefaultItems / unlinkWalletInventory', () => {
     assert.ok(restored);
     assert.equal(restored.wallet, demoW);
   });
+
+  it('refuses to unlink the synthetic demo wallet, preserving hidden flags', async () => {
+    const db = makeFakeDb();
+    const { wallet: demoW } = await ensureDefaultPortfolio('demo-guard-user', db);
+    // A hidden demo row: a delete-and-reseed would silently un-hide it.
+    const cert = DEFAULT_PORTFOLIO_ITEMS[0].cert;
+    const path = `hackathonMerchantInventory/demo-guard-user/items/${cert}`;
+    db._store.set(path, { ...db._store.get(path), hidden: true });
+    const before = db._store.size;
+
+    const result = await unlinkWalletInventory('demo-guard-user', demoW, db);
+    assert.equal(result.rejected, 'demo_wallet');
+    assert.equal(result.removed, 0);
+    assert.equal(result.restored, 0);
+    assert.equal(db._store.size, before);
+    assert.equal(db._store.get(path).hidden, true);
+  });
+
+  it('refuses a stored parent defaultWallet even when it differs from the derived one', async () => {
+    const db = makeFakeDb();
+    const legacyDemoW = `0x${'9'.repeat(40)}`;
+    db._store.set('hackathonMerchantInventory/legacy-demo-user', {
+      defaultWallet: legacyDemoW,
+      seededDefaultAt: '2025-01-01T00:00:00.000Z',
+    });
+    db._store.set(`hackathonMerchantInventory/legacy-demo-user/items/SEED1`, {
+      cert: 'SEED1', wallet: legacyDemoW, status: 'active',
+    });
+
+    const result = await unlinkWalletInventory('legacy-demo-user', legacyDemoW, db);
+    assert.equal(result.rejected, 'demo_wallet');
+    assert.ok(db._store.has('hackathonMerchantInventory/legacy-demo-user/items/SEED1'));
+  });
 });
 
 describe('hideDemoInventory / showDemoInventory', () => {

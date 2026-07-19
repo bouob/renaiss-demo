@@ -233,6 +233,9 @@ router.post('/meta/unlink-wallet', requireAuth, async (req, res) => {
       return res.status(400).json({ error: 'invalid_wallet' });
     }
     const result = await unlinkWalletInventory(req.uid, wallet);
+    if (result.rejected) {
+      return res.status(400).json({ error: result.rejected });
+    }
     return res.json({ ok: true, ...result });
   } catch (err) {
     console.warn(`[meta:unlink-wallet] ${err?.message ?? err}`);

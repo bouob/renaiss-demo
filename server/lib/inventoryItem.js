@@ -53,9 +53,10 @@ export function selectInventoryItems(rows, walletFilter, defaultWallet = null) {
  *   which is the unlinked client state.
  */
 export function selectVisibleHoldings(rows, linkedWallet, defaultWallet) {
-  const list = (Array.isArray(rows) ? rows : []).filter((row) => row?.hidden !== true);
+  const list = Array.isArray(rows) ? rows : [];
+  const notHidden = (row) => row?.hidden !== true;
   const linked = sanitizeWallet(linkedWallet);
-  if (!linked) return list;
+  if (!linked) return list.filter(notHidden);
   const demo = sanitizeWallet(defaultWallet);
 
   const personal = [];
@@ -63,9 +64,12 @@ export function selectVisibleHoldings(rows, linkedWallet, defaultWallet) {
   const demos = [];
   const personalCerts = new Set();
   for (const row of list) {
-    const w = typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '';
+    const w = typeof row?.wallet === 'string' ? row.wallet.toLowerCase() : '';
     if (w === linked) {
       personal.push(row);
+      // Hidden rows still shadow: the client builds this set before its
+      // callers drop hidden items, so a hidden linked row suppresses its demo
+      // twin — Inventory shows neither, and neither may score here.
       if (row.cert) personalCerts.add(row.cert);
     } else if (demo && w === demo) {
       demos.push(row);
@@ -74,7 +78,7 @@ export function selectVisibleHoldings(rows, linkedWallet, defaultWallet) {
     }
   }
   const visibleDemos = demos.filter((row) => row.cert && !personalCerts.has(row.cert));
-  return [...personal, ...other, ...visibleDemos];
+  return [...personal, ...other, ...visibleDemos].filter(notHidden);
 }
 
 function sanitizeString(v, max) {

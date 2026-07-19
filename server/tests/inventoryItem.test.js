@@ -100,4 +100,18 @@ describe('selectVisibleHoldings', () => {
     assert.equal(out.length, 5);
     assert.ok(!out.some((r) => r.hidden === true));
   });
+
+  it('a hidden linked row still shadows its demo twin (neither appears)', () => {
+    // Client parity: filterLinkedInventory shadows on the full linked-wallet
+    // cert set BEFORE callers drop hidden rows, so Inventory shows neither the
+    // hidden personal row nor its demo copy. The chart must not resurrect the
+    // demo copy.
+    const twinRows = [
+      { cert: 'TWIN', wallet: LINKED, hidden: true },
+      { cert: 'TWIN', wallet: DEMO },
+      { cert: 'KEEP', wallet: DEMO },
+    ];
+    const out = selectVisibleHoldings(twinRows, LINKED, DEMO);
+    assert.deepEqual(out.map((r) => r.cert), ['KEEP']);
+  });
 });

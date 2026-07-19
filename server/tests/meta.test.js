@@ -8,6 +8,7 @@ import {
   __resetHeldCertGateForTest,
 } from '../services/heldCertGate.js';
 import { __setAdminForTest } from '../services/firebaseAdmin.js';
+import { syntheticWallet } from '../services/defaultPortfolio.js';
 
 const metaRouter = (await import('../routes/meta.js')).default;
 
@@ -132,5 +133,27 @@ describe('POST /meta/:cert/visibility', () => {
   it('requires auth (401 without a token)', async () => {
     const { status } = await post(`/meta/${CERT}/visibility`, { body: { hidden: true } });
     assert.equal(status, 401);
+  });
+});
+
+describe('POST /meta/unlink-wallet demo-wallet guard', () => {
+  beforeEach(() => {
+    fake = makeFakeFirestore();
+    __setAdminForTest({ db: fake.db, auth: fakeAuth });
+  });
+  afterEach(() => {
+    __setAdminForTest({ db: null, auth: null });
+  });
+
+  it('rejects the synthetic demo wallet with 400 (client guard alone is bypassable)', async () => {
+    const demoW = syntheticWallet('alice');
+    fake.store.set(itemPath('alice', CERT), { cert: CERT, wallet: demoW, hidden: true });
+
+    const { status, body } = await post('/meta/unlink-wallet', { uid: 'alice', body: { wallet: demoW } });
+
+    assert.equal(status, 400);
+    assert.equal(body.error, 'demo_wallet');
+    // Row untouched — the destructive delete-and-reseed never ran.
+    assert.equal(fake.store.get(itemPath('alice', CERT)).hidden, true);
   });
 });
