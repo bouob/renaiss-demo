@@ -160,6 +160,20 @@ export async function unlinkWalletInventory(uid, wallet, db = adminDb) {
 
   const demoWallet = syntheticWallet(uid);
   const parentRef = db.collection(COLLECTION).doc(uid);
+
+  // Server-side demo-wallet guard: unlinking the synthetic wallet would batch
+  // delete-and-reseed every demo row (silently resetting hidden flags). The
+  // client refuses too, but an older client or a direct POST must not get
+  // through. Check the stored defaultWallet as well — a legacy account's
+  // parent doc is the authority, not the client-supplied wallet.
+  const parentSnap = await parentRef.get();
+  const storedDemoWallet = String(
+    (parentSnap.exists && parentSnap.data()?.defaultWallet) || '',
+  ).toLowerCase();
+  if (w === demoWallet || (storedDemoWallet && w === storedDemoWallet)) {
+    return { wallet: null, removed: 0, restored: 0, rejected: 'demo_wallet' };
+  }
+
   const itemsCol = parentRef.collection('items');
   const snap = await itemsCol.get();
 

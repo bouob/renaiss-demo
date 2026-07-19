@@ -3,12 +3,12 @@ import { useTranslation } from 'react-i18next';
 import IndexTile from './IndexTile.jsx';
 import BenchmarkVsChart from './BenchmarkVsChart.jsx';
 import { fetchPortfolioSeries } from '../lib/portfolioSeriesApi.js';
-import { readLastWallet } from '../lib/lastWallet.js';
+import { normalizeWallet, readLastWallet } from '../lib/lastWallet.js';
 
 const MIN_COVERED = 2;
 const WINDOW_KEYS = ['d7', 'd30', 'd365'];
 
-export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
+export default function BenchmarkPanel({ index, user, getToken, dateLocale, fallbackWallet }) {
   const { t } = useTranslation();
   const [tab, setTab] = useState('index');
   const [windowKey, setWindowKey] = useState('d30');
@@ -25,7 +25,10 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
 
   const loadSeries = useCallback(async () => {
     setStatus('loading');
-    const wallet = readLastWallet();
+    // No linked wallet stored: fall back to the synthetic demo wallet so a
+    // demo-only account still gets a Vs series (localStorage no longer holds
+    // the demo wallet — it must never read as "linked" elsewhere).
+    const wallet = readLastWallet() || normalizeWallet(fallbackWallet);
     if (!wallet) { setStatus('nowallet'); return; }
     try {
       const token = await getToken();
@@ -37,7 +40,7 @@ export default function BenchmarkPanel({ index, user, getToken, dateLocale }) {
       setSeries(null);
       setStatus('ready'); // fail-open: render empty/no-benchmark state, not an error
     }
-  }, [getToken]);
+  }, [getToken, fallbackWallet]);
 
   // Lazily fetch whenever the Vs tab is active and idle: covers first
   // activation and an account switch that resets status while on this tab.

@@ -5,6 +5,7 @@ import {
   isHiddenItem,
   filterLinkedInventory,
   normalizeWalletAddr,
+  recoverLinkedWallet,
 } from '../src/lib/demoInventory.js';
 
 const DEMO_W = '0x1bcff45abb471cfab483799d0ebfe090bc709dba';
@@ -67,6 +68,51 @@ describe('filterLinkedInventory', () => {
     ];
     const out = filterLinkedInventory(afterUnlink, '', DEMO_W);
     assert.deepEqual(out.map((r) => r.cert).sort(), ['A', 'B']);
+  });
+});
+
+describe('recoverLinkedWallet', () => {
+  const REAL_W2 = '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
+
+  it('keeps a stored real wallet', () => {
+    const items = [{ cert: 'A', wallet: DEMO_W }];
+    assert.equal(recoverLinkedWallet(items, DEMO_W, REAL_W), REAL_W);
+  });
+
+  it('never returns the synthetic demo wallet, even when stored', () => {
+    // A demo-only account: the synthetic wallet tags every row and may have
+    // leaked into localStorage by an older client. It must not read as linked.
+    const items = [
+      { cert: 'A', wallet: DEMO_W },
+      { cert: 'B', wallet: DEMO_W },
+    ];
+    assert.equal(recoverLinkedWallet(items, DEMO_W, ''), '');
+    assert.equal(recoverLinkedWallet(items, DEMO_W, DEMO_W), '');
+  });
+
+  it('recovers a real wallet from item rows when nothing is stored', () => {
+    const items = [
+      { cert: 'A', wallet: DEMO_W },
+      { cert: 'C', wallet: REAL_W2 },
+    ];
+    assert.equal(recoverLinkedWallet(items, DEMO_W, ''), REAL_W2);
+  });
+
+  it('falls back from a stored demo wallet to a real item wallet', () => {
+    const items = [
+      { cert: 'A', wallet: DEMO_W },
+      { cert: 'C', wallet: REAL_W2 },
+    ];
+    assert.equal(recoverLinkedWallet(items, DEMO_W, DEMO_W), REAL_W2);
+  });
+
+  it('normalizes case and ignores malformed wallets', () => {
+    const items = [
+      { cert: 'A', wallet: 'garbage' },
+      { cert: 'B', wallet: REAL_W2.toUpperCase().replace('0X', '0x') },
+    ];
+    assert.equal(recoverLinkedWallet(items, DEMO_W, 'nope'), REAL_W2);
+    assert.equal(recoverLinkedWallet([], null, ''), '');
   });
 });
 

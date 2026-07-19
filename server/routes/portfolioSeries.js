@@ -21,7 +21,8 @@ import { getGradedFmv } from '../services/renaissOsIndex.js';
 import { buildPortfolioSeries as realBuild, ATTRIBUTION_URL } from '../services/renaissPortfolioSeries.js';
 import { readWallCache } from '../services/wallCache.js';
 import { fetchWallSummary } from './wall.js';
-import { COLLECTION, sanitizeWallet } from '../lib/inventoryItem.js';
+import { COLLECTION, sanitizeWallet, selectVisibleHoldings } from '../lib/inventoryItem.js';
+import { syntheticWallet } from '../services/defaultPortfolio.js';
 import { runConcurrent } from '../utils/runConcurrent.js';
 
 // getGradedFmv shares one daily budget and circuit breaker across the whole
@@ -35,15 +36,18 @@ const MAX_HOLDINGS = 80;
 // (renaissFmv: null) — the builder skips them via `!holding.renaissFmv?.found`.
 async function realLoadHoldings(uid, wallet) {
   if (!adminDb || !wallet) return [];
-  const snap = await adminDb.collection(COLLECTION).doc(uid).collection('items').get();
-  const held = snap.docs
-    .map((d) => ({ cert: d.data()?.cert || d.id, wallet: d.data()?.wallet, hidden: d.data()?.hidden }))
-    // Hidden rows are excluded from the chart, matching how the inventory list
-    // and dashboard movers drop them — a card the merchant hid must not keep
-    // contributing to the portfolio-series value.
-    .filter((row) => row.hidden !== true
-      && (typeof row.wallet === 'string' ? row.wallet.toLowerCase() : '') === wallet)
-    .map((row) => row.cert);
+  const parentRef = adminDb.collection(COLLECTION).doc(uid);
+  const [parentSnap, snap] = await Promise.all([parentRef.get(), parentRef.collection('items').get()]);
+  // The demo wallet distinguishes seeded rows from personal ones; the parent
+  // doc's stored value wins (it may predate the current derivation).
+  const demoWallet = (parentSnap.exists && parentSnap.data()?.defaultWallet) || syntheticWallet(uid);
+  const rows = snap.docs
+    .map((d) => ({ cert: d.data()?.cert || d.id, wallet: d.data()?.wallet, hidden: d.data()?.hidden }));
+  // Score exactly the collection the merchant sees: linked-wallet rows plus
+  // manual cert/CSV adds (no wallet field) plus unshadowed demo rows, hidden
+  // excluded. A strict wallet==query filter here made the Vs chart diverge
+  // from the inventory list.
+  const held = selectVisibleHoldings(rows, wallet, demoWallet).map((row) => row.cert);
   if (held.length > MAX_HOLDINGS) {
     // The reported coverage.total counts only what we enriched, so say so.
     console.warn(`[portfolio-series] ${held.length} holdings truncated to ${MAX_HOLDINGS}`);

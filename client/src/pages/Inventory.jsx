@@ -45,6 +45,7 @@ import {
   filterLinkedInventory,
   isDemoItem,
   isHiddenItem,
+  recoverLinkedWallet,
 } from '../lib/demoInventory.js';
 import {
   collectSalesWallets,
@@ -160,17 +161,15 @@ export default function Inventory({ user, getToken, firebaseOk }) {
       setDefaultWallet(demoW);
 
       // The linked wallet lives in localStorage and is only written on a scan
-      // confirm — a returning user on a fresh browser/origin has none, which
-      // leaves the Benchmark Vs tab stuck on its no-wallet state even though
-      // their inventory loads from the server. Re-hydrate it from server data
-      // (defaultWallet first, then any wallet on the items) so the Vs chart
-      // works without requiring a re-scan.
+      // confirm — a returning user on a fresh browser/origin has none, so
+      // re-hydrate it from the item rows. The synthetic demo wallet is never a
+      // candidate: it must not read as "linked" (the Benchmark Vs tab gets it
+      // separately as a fallback), and a stored copy of it — leaked by an older
+      // client — is purged so the account stops looking permanently linked.
       const last = readLastWallet();
-      const recovered = last
-        || normalizeWallet(demoW)
-        || collectSalesWallets(nextItems, demoW, '')[0]
-        || '';
-      if (!last && recovered) rememberLastWallet(recovered);
+      const recovered = recoverLinkedWallet(nextItems, demoW, last);
+      if (recovered && recovered !== last) rememberLastWallet(recovered);
+      else if (last && !recovered) clearLastWallet();
       setLinkedWallet(recovered);
       const wallets = collectSalesWallets(nextItems, demoW, recovered);
       if (wallets.length === 0) {
@@ -361,7 +360,9 @@ export default function Inventory({ user, getToken, firebaseOk }) {
 
   async function handleUnlinkWallet() {
     const w = normalizeWallet(linkedWallet);
-    if (!w || !user) return;
+    // Unlinking the synthetic demo wallet would delete-and-reseed the demo
+    // cards (a destructive no-op that also resets hidden flags) — refuse it.
+    if (!w || !user || w === normalizeWallet(defaultWallet)) return;
     const removeCount = items.filter((it) => normalizeWallet(it.wallet) === w).length;
     const short = `${w.slice(0, 6)}…${w.slice(-4)}`;
     const ok = typeof window !== 'undefined'
@@ -984,7 +985,7 @@ export default function Inventory({ user, getToken, firebaseOk }) {
                     {showBusy ? t('inventory.restoringDemo') : t('inventory.restoreDemo')}
                   </button>
                 ) : null}
-                {user && linkedWallet ? (
+                {user && linkedWallet && normalizeWallet(linkedWallet) !== normalizeWallet(defaultWallet) ? (
                   <button
                     type="button"
                     className="btn btn-ghost inventory-action-btn"

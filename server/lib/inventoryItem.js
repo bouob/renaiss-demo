@@ -39,6 +39,48 @@ export function selectInventoryItems(rows, walletFilter, defaultWallet = null) {
   });
 }
 
+/**
+ * The rows the merchant actually sees as "my collection", mirrored from the
+ * client's filterLinkedInventory (client/src/lib/demoInventory.js) plus the
+ * hidden exclusion. Portfolio-series must score exactly this set — a stricter
+ * wallet==query filter silently drops manual cert/CSV adds (persisted with no
+ * wallet field) and demo rows, so the Vs chart stops matching the inventory.
+ *
+ * - No/invalid linked wallet: every visible row.
+ * - Linked: rows on that wallet + all non-demo rows (manual adds and other
+ *   wallets included) + demo rows whose cert is not shadowed by a linked-wallet
+ *   copy. Querying the demo wallet itself degenerates to "every visible row",
+ *   which is the unlinked client state.
+ */
+export function selectVisibleHoldings(rows, linkedWallet, defaultWallet) {
+  const list = Array.isArray(rows) ? rows : [];
+  const notHidden = (row) => row?.hidden !== true;
+  const linked = sanitizeWallet(linkedWallet);
+  if (!linked) return list.filter(notHidden);
+  const demo = sanitizeWallet(defaultWallet);
+
+  const personal = [];
+  const other = [];
+  const demos = [];
+  const personalCerts = new Set();
+  for (const row of list) {
+    const w = typeof row?.wallet === 'string' ? row.wallet.toLowerCase() : '';
+    if (w === linked) {
+      personal.push(row);
+      // Hidden rows still shadow: the client builds this set before its
+      // callers drop hidden items, so a hidden linked row suppresses its demo
+      // twin — Inventory shows neither, and neither may score here.
+      if (row.cert) personalCerts.add(row.cert);
+    } else if (demo && w === demo) {
+      demos.push(row);
+    } else {
+      other.push(row);
+    }
+  }
+  const visibleDemos = demos.filter((row) => row.cert && !personalCerts.has(row.cert));
+  return [...personal, ...other, ...visibleDemos].filter(notHidden);
+}
+
 function sanitizeString(v, max) {
   if (typeof v !== 'string') return null;
   const s = v.trim().slice(0, max);
