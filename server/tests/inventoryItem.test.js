@@ -1,6 +1,9 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems } from '../lib/inventoryItem.js';
+import {
+  COLLECTION, CERT_SHAPE, sanitizeWallet, sanitizeItem, selectInventoryItems,
+  selectVisibleHoldings,
+} from '../lib/inventoryItem.js';
 
 describe('inventoryItem shared module', () => {
   it('exposes the inventory collection name', () => assert.equal(COLLECTION, 'hackathonMerchantInventory'));
@@ -67,5 +70,34 @@ describe('inventoryItem shared module', () => {
     ];
     const out = selectInventoryItems(rows, '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa', '0xdef0000000000000000000000000000000000000');
     assert.deepEqual(out.map((r) => r.cert), ['A', 'C']);
+  });
+});
+
+describe('selectVisibleHoldings', () => {
+  const LINKED = '0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
+  const DEMO = '0xdddddddddddddddddddddddddddddddddddddddd';
+  const rows = [
+    { cert: 'PERSONAL', wallet: LINKED },
+    { cert: 'MANUAL', wallet: null }, // cert/CSV add — persisted with no wallet
+    { cert: 'OTHERW', wallet: '0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb' },
+    { cert: 'DEMO1', wallet: DEMO },
+    { cert: 'PERSONAL', wallet: DEMO }, // demo copy shadowed by the personal row
+    { cert: 'HIDDEN', wallet: LINKED, hidden: true },
+  ];
+
+  it('linked wallet: keeps personal + manual + other-wallet + unshadowed demo rows, drops hidden', () => {
+    const out = selectVisibleHoldings(rows, LINKED.toUpperCase().replace('0X', '0x'), DEMO);
+    assert.deepEqual(out.map((r) => r.cert).sort(), ['DEMO1', 'MANUAL', 'OTHERW', 'PERSONAL']);
+  });
+
+  it('demo wallet queried (unlinked fallback): keeps every visible row', () => {
+    const out = selectVisibleHoldings(rows, DEMO, DEMO);
+    assert.deepEqual(out.map((r) => r.cert).sort(), ['DEMO1', 'MANUAL', 'OTHERW', 'PERSONAL', 'PERSONAL']);
+  });
+
+  it('no wallet: keeps every visible row', () => {
+    const out = selectVisibleHoldings(rows, '', DEMO);
+    assert.equal(out.length, 5);
+    assert.ok(!out.some((r) => r.hidden === true));
   });
 });
